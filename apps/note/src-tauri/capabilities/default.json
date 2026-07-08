@@ -1,12 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Read-only access to the sway-toolkit's shared theme file, for the Follow-system-theme option.",
+  "description": "Read-only access to the sway-toolkit's shared theme file for Follow-system-theme, plus read/write access to the local notes vault at ~/OGNote.",
   "windows": ["main"],
   "permissions": [
     {
       "identifier": "fs:allow-read-text-file",
-      "allow": [{ "path": "$HOME/.config/sway-power/config.json" }]
+      "allow": [{ "path": "$HOME/.config/sway-power/config.json" }, { "path": "$HOME/OGNote/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$HOME/OGNote/**" }]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "$HOME/OGNote/**" }]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "$HOME/.config/sway-power/config.json" }, { "path": "$HOME/OGNote/**" }]
     }
   ]
 }
