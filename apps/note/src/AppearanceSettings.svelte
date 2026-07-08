@@ -2,6 +2,9 @@
   import type { AppearanceSettings as ServerAppearanceSettings, AppearanceTheme, BackgroundGradient, BackgroundGradientPoint, CurrentSession, CustomFont, DesignTokens, SystemVersion } from '@og-suite/contracts'
   import type { RuntimeServices } from '@og-suite/runtime'
   import Icon from '@og-suite/ui/Icon'
+  import ThemeModeToggle from '@og-toolkit/theme/ThemeModeToggle'
+  import { applyTokens, loadThemeMode, readSystemTheme, resolveTheme, saveThemeMode } from '@og-toolkit/theme'
+  import type { ThemeMode as OgThemeMode } from '@og-toolkit/theme'
   import {
     builtInFontOptions,
     buildAppearancePatch,
@@ -42,6 +45,20 @@
   let selectedThemeMode: ThemeMode = 'custom'
   let themeName = 'Custom theme'
   let savedThemes: SavedAppearanceTheme[] = loadSavedThemes()
+
+  let ogThemeMode: OgThemeMode = loadThemeMode()
+  let systemThemeAvailable = false
+  onMount(async () => {
+    systemThemeAvailable = (await readSystemTheme()) !== null
+  })
+
+  async function handleOgThemeModeChange(nextMode: OgThemeMode) {
+    ogThemeMode = nextMode
+    saveThemeMode(nextMode)
+    const resolved = await resolveTheme(nextMode)
+    applyTokens(resolved)
+    onTokensChange(resolved)
+  }
   let shareCurrentTheme = true
   let importStatus = ''
   let themeStorageStatus = ''
@@ -599,6 +616,13 @@
 
   <section bind:this={behaviorSection} class="settings-section" aria-labelledby="behavior-settings-heading">
     <h3 id="behavior-settings-heading">Behavior</h3>
+    <div class="settings-card">
+      <ThemeModeToggle
+        mode={ogThemeMode}
+        {systemThemeAvailable}
+        onChange={handleOgThemeModeChange}
+      />
+    </div>
     <div class="settings-card">
       <label class="settings-toggle">
         <input type="checkbox" checked={tokens.confirmDelete} on:change={(event) => patch({ confirmDelete: event.currentTarget.checked })} />

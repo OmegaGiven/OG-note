@@ -11,6 +11,8 @@ const alias = [
   { find: '@og-suite/runtime', replacement: fileURLToPath(new URL('../../packages/runtime/src/index.ts', import.meta.url)) },
   { find: '@og-suite/sync', replacement: fileURLToPath(new URL('../../packages/sync/src/index.ts', import.meta.url)) },
   { find: '@og-suite/ui', replacement: fileURLToPath(new URL('../../packages/ui/src/index.ts', import.meta.url)) },
+  { find: '@og-toolkit/theme/ThemeModeToggle', replacement: fileURLToPath(new URL('../../packages/theme/src/ThemeModeToggle.svelte', import.meta.url)) },
+  { find: '@og-toolkit/theme', replacement: fileURLToPath(new URL('../../packages/theme/src/index.ts', import.meta.url)) },
 ]
 
 export default defineConfig({

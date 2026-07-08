@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Read-only access to the sway-toolkit's shared theme file, for the Follow-system-theme option.","local":true,"windows":["main"],"permissions":[{"identifier":"fs:allow-read-text-file","allow":[{"path":"$HOME/.config/sway-power/config.json"}]}]}}

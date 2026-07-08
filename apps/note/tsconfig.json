@@ -10,7 +10,9 @@
       "@og-suite/ui": ["../../packages/ui/src/index.ts"],
       "@og-suite/ui/ActionBar": ["../../packages/ui/src/ActionBar.svelte"],
       "@og-suite/ui/Icon": ["../../packages/ui/src/Icon.svelte"],
-      "@og-suite/ui/MobileSuiteTopBar": ["../../packages/ui/src/MobileSuiteTopBar.svelte"]
+      "@og-suite/ui/MobileSuiteTopBar": ["../../packages/ui/src/MobileSuiteTopBar.svelte"],
+      "@og-toolkit/theme": ["../../packages/theme/src/index.ts"],
+      "@og-toolkit/theme/ThemeModeToggle": ["../../packages/theme/src/ThemeModeToggle.svelte"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
