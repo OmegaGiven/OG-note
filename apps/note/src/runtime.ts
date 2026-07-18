@@ -45,8 +45,10 @@ export function createStandaloneRuntime(serverUrl?: string): RuntimeServices {
     api: createHttpApiClient(baseUrl, () => localStorage.getItem('og-suite:auth:access-token')),
     cache: createLocalCache(),
     syncQueue: createBrowserSyncQueue('og-suite:notes:sync-queue'),
-    presence: createWebSocketPresence(baseUrl, clientId),
-    documentUpdates: createWebSocketDocumentUpdates(baseUrl, clientId),
+    presence: createWebSocketPresence(baseUrl, clientId, () => localStorage.getItem('og-suite:auth:access-token')),
+    documentUpdates: createWebSocketDocumentUpdates(baseUrl, clientId, () =>
+      localStorage.getItem('og-suite:auth:access-token'),
+    ),
     tokens: loadStoredTokens(),
     clientId,
     runtimeMode: 'remote',

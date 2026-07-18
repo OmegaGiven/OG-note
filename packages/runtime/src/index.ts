@@ -247,11 +247,16 @@ export function createNoopDocumentUpdateChannel(): DocumentUpdateChannel {
   }
 }
 
-export function createWebSocketPresence(baseUrl: string, clientId: string): PresenceChannel {
+export function createWebSocketPresence(
+  baseUrl: string,
+  clientId: string,
+  getToken?: () => string | null,
+): PresenceChannel {
   const sockets = new Map<string, WebSocket>()
   return {
     connect(documentId, onPeers) {
-      const url = `${baseUrl.replace(/^http/, 'ws')}/ws/presence/${documentId}?client_id=${encodeURIComponent(clientId)}`
+      const token = getToken?.() ?? ''
+      const url = `${baseUrl.replace(/^http/, 'ws')}/ws/presence/${documentId}?client_id=${encodeURIComponent(clientId)}&token=${encodeURIComponent(token)}`
       const socket = new WebSocket(url)
       sockets.set(documentId, socket)
       socket.addEventListener('message', (event) => {
@@ -272,7 +277,11 @@ export function createWebSocketPresence(baseUrl: string, clientId: string): Pres
   }
 }
 
-export function createWebSocketDocumentUpdates(baseUrl: string, clientId: string): DocumentUpdateChannel {
+export function createWebSocketDocumentUpdates(
+  baseUrl: string,
+  clientId: string,
+  getToken?: () => string | null,
+): DocumentUpdateChannel {
   const sockets = new Map<string, WebSocket>()
   const pending = new Map<string, CrdtUpdate[]>()
 
@@ -287,7 +296,8 @@ export function createWebSocketDocumentUpdates(baseUrl: string, clientId: string
 
   return {
     connect(documentId, onUpdate, onAck, onError) {
-      const url = `${baseUrl.replace(/^http/, 'ws')}/ws/documents/${documentId}?client_id=${encodeURIComponent(clientId)}`
+      const token = getToken?.() ?? ''
+      const url = `${baseUrl.replace(/^http/, 'ws')}/ws/documents/${documentId}?client_id=${encodeURIComponent(clientId)}&token=${encodeURIComponent(token)}`
       const socket = new WebSocket(url)
       sockets.set(documentId, socket)
       socket.addEventListener('open', () => {
