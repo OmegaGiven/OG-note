@@ -44,10 +44,12 @@ PASS="$(cat "$PASSWORD_FILE")"
 cd "$APP_DIR"
 npx tauri android build --apk --target "$TARGET"
 
+VERSION="$(node -p "require('$APP_DIR/package.json').version")"
+
 UNSIGNED="$APP_DIR/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk"
 OUT_DIR="$APP_DIR/src-tauri/gen/android/app/build/outputs/apk/universal/release"
 ALIGNED="$OUT_DIR/app-universal-release-aligned.apk"
-SIGNED="$OUT_DIR/og-note-release-signed.apk"
+SIGNED="$OUT_DIR/og-note-v$VERSION-release-signed.apk"
 
 "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
 "$BUILD_TOOLS/apksigner" sign \
