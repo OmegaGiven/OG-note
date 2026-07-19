@@ -19,3 +19,8 @@ apps/note/src-tauri/gen/apple/**/xcuserdata/
 # editors
 .vscode/
 .idea/
+
+# android release signing key — never commit this, it's the only way to
+# ship updates to devices that already have the app installed
+apps/note/src-tauri/keystore/
+apps/note/.env.local
