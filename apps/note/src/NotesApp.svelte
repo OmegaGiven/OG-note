@@ -1089,6 +1089,33 @@
     } else {
       scheduleRemoteFlush()
     }
+
+    // Mirror this TXT/MD edit into richContent too — see
+    // syncRichFragmentFromMarkdown's doc comment. Built off the same
+    // baseState the plain-text diff above used, so this is an independent
+    // delta from the same starting point rather than a replay of `update`.
+    const richSyncDoc = hydrateLiveYDoc(document)
+    const richSyncVector = getDocStateVector(richSyncDoc)
+    syncRichFragmentFromMarkdown(richSyncDoc, nextText)
+    const richPayload = encodeDocUpdateSince(richSyncDoc, richSyncVector)
+    if (richPayload) {
+      const richUpdate = {
+        id: createRuntimeId('update'),
+        documentId: activeEditorDocumentId,
+        clientId: services.clientId,
+        sequence: sequence++,
+        payload: richPayload,
+        createdAt: new Date().toISOString(),
+      }
+      const queuedRich = await queueOperation(services, { kind: 'append_document_update', update: richUpdate })
+      liveUpdateQueueIds.set(richUpdate.id, queuedRich.id)
+      await refreshQueuedOperationCount()
+      envelope = await services.cache.loadEnvelope()
+      const richBroadcasted = services.documentUpdates.publishUpdate(activeEditorDocumentId, richUpdate)
+      if (richBroadcasted) scheduleLiveAckFallback(richUpdate.id)
+      else scheduleRemoteFlush()
+    }
+
     services.presence.publishCursor(activeEditorDocumentId, editorElement?.selectionStart ?? nextText.length)
     status = isLocalRuntime ? 'Saved locally' : broadcasted ? 'Document shared live' : 'Document queued for sync'
   }
@@ -2139,6 +2166,66 @@
     },
   })
 
+  // Shared between the real (visible, DOM-bound) Rich editor and the
+  // headless one-off editor used to translate a TXT/MD-mode edit into
+  // richContent (see syncRichFragmentFromMarkdown) — both must resolve to
+  // the exact same ProseMirror schema, or content written by one and read
+  // by the other can silently lose marks/nodes the other side doesn't know
+  // about.
+  function richContentExtensions(liveDoc: Y.Doc) {
+    return [
+      Collaboration.configure({ document: liveDoc, field: 'richContent' }),
+      StarterKit.configure({ undoRedo: false }),
+      Underline,
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        protocols: ['http', 'https', 'mailto', 'tel'],
+      }),
+      Image,
+      TextStyle,
+      FontFamily,
+      Color,
+      Highlight.configure({ multicolor: true }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      IndentExtension,
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableHeader,
+      TableCell,
+    ]
+  }
+
+  // The mirror image of syncPlainTextFieldFromMarkdown: a TXT/MD-mode edit
+  // only ever touches the plain "content" Y.Text, never richContent — so
+  // without this, a Rich-mode device never sees the edit, and its next
+  // save (which always re-derives "content" from its own richContent)
+  // silently reverts it. This is a real bug reported live: typing in the
+  // web UI (TXT mode) did nothing on the phone app (Rich mode), and the
+  // phone's next edit wiped the web UI's change out from under it.
+  //
+  // There's no plain-text equivalent of replaceTextWithMinimalEdit for a
+  // Y.XmlFragment (structural tree, not a flat sequence), so this goes
+  // through a real, detached Tiptap Editor bound to the same liveDoc via
+  // Collaboration — the same machinery the visible Rich editor uses — and
+  // lets it translate a full setContent() into the correct Y updates via
+  // ySyncPlugin. Like the initial-seed case this can clobber concurrent
+  // Rich-mode formatting on another device if both edit at once; that's an
+  // accepted tradeoff over the previous behavior of never propagating at
+  // all.
+  function syncRichFragmentFromMarkdown(liveDoc: Y.Doc, markdown: string) {
+    const detachedElement = window.document.createElement('div')
+    const headlessEditor = new Editor({
+      element: detachedElement,
+      extensions: richContentExtensions(liveDoc),
+      editable: true,
+    })
+    headlessEditor.commands.setContent(renderMarkdown(markdown), { emitUpdate: true })
+    headlessEditor.destroy()
+  }
+
   function ensureRichEditor() {
     if (!selectedNote || !selectedDocument || !richEditorElement) return
     if (richEditor && richDocumentId === selectedNote.documentId) return
@@ -2152,29 +2239,7 @@
 
     richEditor = new Editor({
       element: richEditorElement,
-      extensions: [
-        Collaboration.configure({ document: liveYDoc, field: 'richContent' }),
-        StarterKit.configure({ undoRedo: false }),
-        Underline,
-        Link.configure({
-          openOnClick: false,
-          autolink: true,
-          protocols: ['http', 'https', 'mailto', 'tel'],
-        }),
-        Image,
-        TextStyle,
-        FontFamily,
-        Color,
-        Highlight.configure({ multicolor: true }),
-        TextAlign.configure({ types: ['heading', 'paragraph'] }),
-        TaskList,
-        TaskItem.configure({ nested: true }),
-        IndentExtension,
-        Table.configure({ resizable: true }),
-        TableRow,
-        TableHeader,
-        TableCell,
-      ],
+      extensions: richContentExtensions(liveYDoc),
       editorProps: {
         attributes: {
           class: 'rich-editor-content',

@@ -141,10 +141,13 @@ export function syncLiveDocFromState(liveDoc: Y.Doc, state: CrdtDocumentState): 
  * nothing device A typed in Rich mode. Calling this alongside every Rich
  * save keeps "content" continuously up to date (via the same doc's shared
  * update, not a separate round trip) so any TXT/MD viewer sees current
- * text regardless of which mode last edited it. One-directional by
- * design: a plain-mode edit does not currently regenerate richContent,
- * since blindly re-parsing markdown into the XML fragment risks
- * clobbering concurrent Rich-mode formatting on another device.
+ * text regardless of which mode last edited it. This module only handles
+ * this direction — going the other way (plain edit -> richContent) needs
+ * a real ProseMirror schema/editor to build valid XmlFragment content,
+ * which this framework-agnostic package intentionally doesn't depend on.
+ * The app layer (NotesApp.svelte's syncRichFragmentFromMarkdown) provides
+ * that other direction via a detached Tiptap editor bound to the same
+ * live doc.
  */
 export function syncPlainTextFieldFromMarkdown(doc: Y.Doc, markdown: string): void {
   replaceTextWithMinimalEdit(doc.getText(textKey), markdown)
