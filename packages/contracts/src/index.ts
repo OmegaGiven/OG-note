@@ -485,6 +485,18 @@ export type CrdtDocumentState = {
   compactedAt?: IsoDateTime | null
 }
 
+export type DocumentVersionSummary = {
+  id: string
+  documentId: string
+  createdAt: IsoDateTime
+  createdBy: string
+  reason: string
+}
+
+export type DocumentVersion = DocumentVersionSummary & {
+  state: CrdtDocumentState
+}
+
 export type CrdtUpdate = {
   id: string
   documentId: string

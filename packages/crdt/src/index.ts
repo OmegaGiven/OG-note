@@ -2,6 +2,7 @@ import type { CrdtDocumentState, CrdtUpdate } from '@og-suite/contracts'
 import * as Y from 'yjs'
 
 const textKey = 'content'
+const richContentKey = 'richContent'
 const clientSchemaVersion = 2
 const legacySnapshotClientId = 1
 
@@ -76,6 +77,72 @@ function hydrateYDoc(state: CrdtDocumentState): Y.Doc {
   applySnapshot(doc, state.snapshot)
   for (const update of orderedUpdates(state.updates)) applyStoredUpdate(doc, update.payload)
   return doc
+}
+
+/**
+ * Live-editing entry point for the Rich editor: unlike everything else in
+ * this module, which reconstructs a Y.Doc just long enough to read a
+ * derived value (text, a diff) out of it, this hands back the actual
+ * mutable Y.Doc so a real editor binding (Tiptap's Collaboration
+ * extension) can write ProseMirror transactions directly into it as they
+ * happen. That's what makes edits synchronous and un-losable: there's no
+ * "diff two snapshots later" step in between the keystroke and the CRDT
+ * state.
+ */
+export function hydrateLiveYDoc(state: CrdtDocumentState): Y.Doc {
+  return hydrateYDoc(state)
+}
+
+export function getRichFragment(doc: Y.Doc): Y.XmlFragment {
+  return doc.getXmlFragment(richContentKey)
+}
+
+export function getDocStateVector(doc: Y.Doc): Uint8Array {
+  return Y.encodeStateVector(doc)
+}
+
+/**
+ * Applies a remote CrdtUpdate directly onto a live Y.Doc (as opposed to
+ * applyUpdates, which reconstructs a throwaway doc just to read text back
+ * out). Used for the "another device is editing this note right now" path
+ * — Y.applyUpdate is commutative/idempotent, so this is safe to call even
+ * if the update turns out to already be reflected in the doc.
+ */
+export function applyEncodedUpdate(doc: Y.Doc, payload: string): void {
+  if (!payload) return
+  Y.applyUpdate(doc, decodeUpdate(payload))
+}
+
+/**
+ * Reconciles a live editing Y.Doc with a CrdtDocumentState fetched from the
+ * server/envelope (a pull, a periodic refresh, a fresh document fetch) —
+ * without ever replacing the live doc's content wholesale. Hydrates the
+ * server state into a throwaway doc, diffs it against what the live doc
+ * already has, and applies only the missing delta. Safe to call even if
+ * the server state is stale relative to the live doc (the diff is then
+ * empty and this is a no-op) — this is what makes it safe to use as the
+ * general "sync in whatever's new" path instead of every caller needing
+ * its own staleness check before deciding whether to touch the live doc.
+ */
+export function syncLiveDocFromState(liveDoc: Y.Doc, state: CrdtDocumentState): void {
+  const remoteDoc = hydrateYDoc(state)
+  const delta = Y.encodeStateAsUpdate(remoteDoc, Y.encodeStateVector(liveDoc))
+  if (delta.length > 2) Y.applyUpdate(liveDoc, delta)
+}
+
+/**
+ * Encodes everything that changed in `doc` since `sinceStateVector` as one
+ * Yjs update, ready to hand to createTextDiffUpdate's sibling call sites
+ * (queueOperation/publishUpdate) as a CrdtUpdate payload. Returns null if
+ * nothing changed — callers should skip persisting/broadcasting a no-op.
+ */
+export function encodeDocUpdateSince(doc: Y.Doc, sinceStateVector: Uint8Array): string | null {
+  const delta = Y.encodeStateAsUpdate(doc, sinceStateVector)
+  // An update encoding "nothing changed" is still a few bytes of Yjs
+  // protocol framing, not zero-length — compare against a fresh doc's
+  // empty delta instead of checking length === 0.
+  if (delta.length <= 2) return null
+  return encodeUpdate(delta)
 }
 
 function createYDoc(text = '') {

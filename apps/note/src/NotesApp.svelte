@@ -1,12 +1,24 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type { CustomFont, DesignTokens } from '@og-suite/contracts'
-  import { applyUpdates, createDocumentState, createTextDiffUpdate } from '@og-suite/crdt'
-  import type { CrdtDocumentState, CrdtUpdate, Note, NoteFolder, PresencePeer, SyncEnvelope, SyncOperation } from '@og-suite/contracts'
+  import {
+    applyEncodedUpdate,
+    applyUpdates,
+    createDocumentState,
+    createTextDiffUpdate,
+    encodeDocUpdateSince,
+    getDocStateVector,
+    getRichFragment,
+    hydrateLiveYDoc,
+    syncLiveDocFromState,
+  } from '@og-suite/crdt'
+  import type { CrdtDocumentState, CrdtUpdate, DocumentVersionSummary, Note, NoteFolder, PresencePeer, SyncEnvelope, SyncOperation } from '@og-suite/contracts'
   import { createHttpApiClient, createRuntimeId, createSerialQueue } from '@og-suite/runtime'
   import type { RuntimeServices } from '@og-suite/runtime'
   import { bootstrapWorkspace, flushQueuedOperations, mergeEnvelope, pullChanges, queueOperation } from '@og-suite/sync'
+  import * as Y from 'yjs'
   import { Editor, Extension } from '@tiptap/core'
+  import Collaboration from '@tiptap/extension-collaboration'
   import StarterKit from '@tiptap/starter-kit'
   import Underline from '@tiptap/extension-underline'
   import Link from '@tiptap/extension-link'
@@ -89,6 +101,10 @@
   let status = 'Starting'
   let loggedStatus = ''
   let statusDialogOpen = false
+  let documentVersions: DocumentVersionSummary[] = []
+  let versionsLoading = false
+  let versionsError = ''
+  let restoringVersionId = ''
   let syncLog: Array<{ id: string; message: string; at: string; iso: string }> = []
   let lastSyncAttemptAt = ''
   let lastSyncPushAt = ''
@@ -119,6 +135,14 @@
   let richEditorElement: HTMLDivElement | null = null
   let richEditor: Editor | null = null
   let richDocumentId = ''
+  // The live Y.Doc backing the Rich editor's Collaboration binding.
+  // ProseMirror transactions write into this synchronously, as part of the
+  // same call stack as the keystroke — ⁠there's no debounce or diff step
+  // between typing and the CRDT state being correct. liveYDocLastVector
+  // tracks what's already been persisted/broadcast so encodeDocUpdateSince
+  // only ships the delta, not the whole doc, on each save.
+  let liveYDoc: Y.Doc | null = null
+  let liveYDocLastVector: Uint8Array | null = null
   let richActiveStateVersion = 0
   let richActiveStateFrame: number | null = null
   let uploadInputElement: HTMLInputElement | null = null
@@ -415,6 +439,49 @@
       manualSyncBusy = ''
     }
   }
+
+  async function loadDocumentVersions() {
+    if (isLocalRuntime || !selectedNote) {
+      documentVersions = []
+      return
+    }
+    versionsLoading = true
+    versionsError = ''
+    try {
+      documentVersions = await services.api.get<DocumentVersionSummary[]>(
+        `/api/v1/documents/${selectedNote.documentId}/versions`,
+      )
+    } catch (error) {
+      versionsError = error instanceof Error ? error.message : 'Could not load version history.'
+      documentVersions = []
+    } finally {
+      versionsLoading = false
+    }
+  }
+
+  async function restoreDocumentVersion(versionId: string) {
+    if (!selectedNote || restoringVersionId) return
+    if (tokens.confirmDelete && !window.confirm('Restore this version? The current content will be kept as its own version first, so this is undoable.')) return
+    restoringVersionId = versionId
+    try {
+      await services.api.post(`/api/v1/documents/${selectedNote.documentId}/versions/${versionId}/restore`, {})
+      // The restored state lives on the server now; drop any local live
+      // editing state for this document so the next open re-hydrates from
+      // it fresh instead of a stale in-memory Y.Doc.
+      if (richDocumentId === selectedNote.documentId) destroyRichEditor()
+      envelope = await services.cache.loadEnvelope()
+      await refreshSelectedDocumentFromServer()
+      refreshSelectedEditorFromEnvelope()
+      await loadDocumentVersions()
+      status = 'Restored an earlier version'
+    } catch (error) {
+      recordSyncError(error, 'Could not restore that version.')
+    } finally {
+      restoringVersionId = ''
+    }
+  }
+
+  $: if (statusDialogOpen && selectedNote) void loadDocumentVersions()
 
   async function refreshQueuedOperationCount() {
     const queued = await services.syncQueue.list()
@@ -944,16 +1011,50 @@
   }
 
   async function saveDocumentNow() {
-    if (editorRenderMode === 'rich') {
-      exportRichEditorToMarkdown()
-    }
     const note = selectedNote
     const activeEditorDocumentId = editorDocumentId || note?.documentId || ''
     const document = envelope?.documents.find((item) => item.id === activeEditorDocumentId) ?? selectedDocument
     const noteForDocument = notes.find((item) => item.documentId === activeEditorDocumentId) ?? note
+    if (!noteForDocument || !document || !activeEditorDocumentId) return
+
+    // Rich mode: the Collaboration extension has already written this
+    // edit into liveYDoc as a real Yjs transaction (synchronously, when
+    // the user typed it) — no diffing needed, just ship whatever changed
+    // in the doc since the last thing we persisted. exportRichEditorToMarkdown
+    // still runs so editorText stays valid for display and for TXT/MD mode
+    // switches, but it's no longer what produces the persisted update.
+    if (editorRenderMode === 'rich' && liveYDoc && richDocumentId === activeEditorDocumentId) {
+      exportRichEditorToMarkdown()
+      lastSavedEditorText = editorText
+      const payload = encodeDocUpdateSince(liveYDoc, liveYDocLastVector ?? getDocStateVector(liveYDoc))
+      if (!payload) return
+      liveYDocLastVector = getDocStateVector(liveYDoc)
+      const update = {
+        id: createRuntimeId('update'),
+        documentId: activeEditorDocumentId,
+        clientId: services.clientId,
+        sequence: sequence++,
+        payload,
+        createdAt: new Date().toISOString(),
+      }
+      const queued = await queueOperation(services, { kind: 'append_document_update', update })
+      liveUpdateQueueIds.set(update.id, queued.id)
+      await refreshQueuedOperationCount()
+      envelope = await services.cache.loadEnvelope()
+      const broadcasted = services.documentUpdates.publishUpdate(activeEditorDocumentId, update)
+      logSyncEvent(`${broadcasted ? 'Shared live edit' : 'Queued edit'} ${update.id} for ${noteForDocument.title || noteForDocument.id}`)
+      if (broadcasted) {
+        scheduleLiveAckFallback(update.id)
+      } else {
+        scheduleRemoteFlush()
+      }
+      services.presence.publishCursor(activeEditorDocumentId, richEditor?.state.selection.from ?? null)
+      status = isLocalRuntime ? 'Saved locally' : broadcasted ? 'Document shared live' : 'Document queued for sync'
+      return
+    }
+
     const previousText = lastSavedEditorText
     const nextText = editorText
-    if (!noteForDocument || !document || !activeEditorDocumentId) return
     if (previousText === nextText) return
     const update = {
       ...createTextDiffUpdate(activeEditorDocumentId, services.clientId, sequence++, previousText, nextText, document),
@@ -1031,6 +1132,43 @@
     if (hadSaveTimer || hasPendingLocalEditorChange(editorDocumentId)) await saveDocument()
   }
 
+  // setTimeout is not a durable save mechanism on mobile: WebViews throttle
+  // or pause JS timers the instant the app backgrounds (screen lock, app
+  // switch, notification shade), which is exactly the moment a user is
+  // most likely to leave a note. scheduleDocumentSave's 180ms debounce and
+  // scheduleRemoteFlush's 800ms debounce can both be sitting unfired when
+  // that happens. visibilitychange/pagehide fire synchronously as part of
+  // the backgrounding transition itself, before any timer throttling
+  // kicks in, so they're the actual reliable "about to lose the JS event
+  // loop" signal — flush everything pending right there instead of
+  // trusting the timers to eventually run.
+  async function flushAllPendingWork() {
+    try {
+      await flushPendingEditorSave()
+    } catch (error) {
+      console.debug('Flush of pending editor save failed on backgrounding', error)
+    }
+    if (flushTimer) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    if (isLocalRuntime) return
+    try {
+      envelope = await flushQueuedOperations(services)
+      lastSyncPushAt = new Date().toLocaleTimeString()
+      await refreshQueuedOperationCount()
+    } catch (error) {
+      recordSyncError(error, 'Could not flush queued edits to the server.')
+      // Still safe: flushPendingEditorSave already committed the edit to
+      // the local cache above, so it survives even if the network push
+      // itself failed here — the sync queue will retry it later.
+    }
+  }
+
+  function handleVisibilityFlush() {
+    if (document.visibilityState === 'hidden') void flushAllPendingWork()
+  }
+
   async function queueWorkspaceOperation(operation: SyncOperation) {
     const queued = await queueOperation(services, operation)
     scheduleRemoteFlush()
@@ -1088,6 +1226,21 @@
       conflicts: [],
     })
     await services.cache.saveEnvelope(envelope)
+
+    // Fluid concurrent editing: if this document is live in the Rich
+    // editor right now, apply the collaborator's Yjs update directly onto
+    // the shared doc — the Collaboration extension's binding reflects it
+    // in the editor immediately (real merge, cursor position preserved),
+    // no destructive re-render from a re-derived markdown string. Advance
+    // liveYDocLastVector so our next local save only ships *our* changes,
+    // not an unnecessary echo of what we just received back out.
+    if (liveYDoc && richDocumentId === update.documentId) {
+      applyEncodedUpdate(liveYDoc, update.payload)
+      liveYDocLastVector = getDocStateVector(liveYDoc)
+      status = 'Merged collaborator edit'
+      return
+    }
+
     refreshSelectedEditorFromEnvelope(update.documentId)
     status = 'Merged collaborator edit'
   }
@@ -1115,6 +1268,19 @@
 
   function applyRichDocumentState(documentState: CrdtDocumentState) {
     if (editorRenderMode === 'rich' && richEditor) {
+      // If this document is live-bound (liveYDoc), the "content" Y.Text
+      // this function used to derive its text from is no longer what rich
+      // edits write to — only "richContent" is. Reconciling by re-deriving
+      // markdown from the stale "content" key and doing a destructive
+      // setContent would wipe out whatever's actually in the live doc
+      // (this was a real bug: the periodic pull-fallback timer clobbered
+      // in-progress rich edits within ~1-2s of typing). Merge the delta
+      // into the live doc instead — safe no-op if there's nothing new.
+      if (liveYDoc && richDocumentId === documentState.id) {
+        syncLiveDocFromState(liveYDoc, documentState)
+        liveYDocLastVector = getDocStateVector(liveYDoc)
+        return
+      }
       if (
         hasQueuedLocalDocumentChange(documentState.id) ||
         shouldProtectEditorSelection(documentState.id) ||
@@ -1735,11 +1901,15 @@
     window.visualViewport?.addEventListener('resize', updateMobileKeyboardInset)
     window.visualViewport?.addEventListener('scroll', updateMobileKeyboardInset)
     window.addEventListener('resize', updateMobileKeyboardInset)
+    document.addEventListener('visibilitychange', handleVisibilityFlush)
+    window.addEventListener('pagehide', flushAllPendingWork)
     return () => {
       document.documentElement.style.removeProperty('--notes-keyboard-inset')
       window.visualViewport?.removeEventListener('resize', updateMobileKeyboardInset)
       window.visualViewport?.removeEventListener('scroll', updateMobileKeyboardInset)
       window.removeEventListener('resize', updateMobileKeyboardInset)
+      document.removeEventListener('visibilitychange', handleVisibilityFlush)
+      window.removeEventListener('pagehide', flushAllPendingWork)
     }
   })
 
@@ -1900,11 +2070,15 @@
     destroyRichEditor()
 
     richDocumentId = selectedNote.documentId
+    liveYDoc = hydrateLiveYDoc(selectedDocument)
+    liveYDocLastVector = getDocStateVector(liveYDoc)
+    const richFragment = getRichFragment(liveYDoc)
+    const richFragmentWasEmpty = richFragment.length === 0
 
     richEditor = new Editor({
       element: richEditorElement,
-      content: renderMarkdown(editorText),
       extensions: [
+        Collaboration.configure({ document: liveYDoc, field: 'richContent' }),
         StarterKit.configure({ undoRedo: false }),
         Underline,
         Link.configure({
@@ -1968,6 +2142,16 @@
       },
     })
 
+    // First time this document has ever been opened in Rich mode: the
+    // Y.XmlFragment the Collaboration extension reads from is empty, so
+    // seed it from the note's markdown source. setContent goes through the
+    // same transaction pipeline as typing, so this generates real Yjs ops
+    // into richFragment via the binding rather than bypassing it — no
+    // separate "initial state" concept to keep in sync.
+    if (richFragmentWasEmpty && editorText.trim()) {
+      richEditor.commands.setContent(renderMarkdown(editorText), { emitUpdate: true })
+    }
+
   }
 
   function requestRichActiveStateRefresh() {
@@ -1987,6 +2171,9 @@
     richEditor?.destroy()
     richEditor = null
     richDocumentId = ''
+    liveYDoc?.destroy()
+    liveYDoc = null
+    liveYDocLastVector = null
     tableMenuOpen = false
     richTableMenuStyle = ''
   }
@@ -2724,6 +2911,37 @@
           <div class="note-status-section">
             <strong>Last sync error</strong>
             <p>{lastSyncError}</p>
+          </div>
+        {/if}
+        {#if !isLocalRuntime}
+          <div class="note-status-section">
+            <div class="note-status-section-title">
+              <strong>Version history</strong>
+              <button type="button" disabled={versionsLoading} on:click={() => void loadDocumentVersions()}>
+                {versionsLoading ? 'Loading' : 'Refresh'}
+              </button>
+            </div>
+            {#if versionsError}
+              <p>{versionsError}</p>
+            {:else if documentVersions.length === 0}
+              <p>{versionsLoading ? 'Loading versions…' : 'No saved versions yet — one is checkpointed automatically a few minutes after you start editing.'}</p>
+            {:else}
+              <ul class="note-status-version-list">
+                {#each documentVersions as version (version.id)}
+                  <li>
+                    <span>{new Date(version.createdAt).toLocaleString()}</span>
+                    <span class="note-status-version-reason">{version.reason}</span>
+                    <button
+                      type="button"
+                      disabled={Boolean(restoringVersionId)}
+                      on:click={() => void restoreDocumentVersion(version.id)}
+                    >
+                      {restoringVersionId === version.id ? 'Restoring…' : 'Restore'}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
           </div>
         {/if}
         <div class="note-status-section">

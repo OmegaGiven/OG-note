@@ -1296,6 +1296,50 @@ footer {
   gap: 8px;
 }
 
+.note-status-version-list {
+  display: grid;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.note-status-version-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border, var(--og-border)) 70%, transparent);
+  font-size: 12px;
+}
+
+.note-status-version-list li:first-child {
+  border-top: none;
+}
+
+.note-status-version-reason {
+  color: var(--muted, var(--og-muted));
+}
+
+.note-status-version-list li button {
+  min-height: 26px;
+  border: 1px solid var(--border, var(--og-border));
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: var(--action-bar-bg, var(--og-action-bar-bg));
+  color: var(--text, var(--og-text));
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.note-status-version-list li button:disabled {
+  opacity: 0.45;
+}
+
 .note-status-server-row,
 .note-sync-log > div {
   display: grid;
