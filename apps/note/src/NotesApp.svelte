@@ -3,7 +3,7 @@
   import type { CustomFont, DesignTokens } from '@og-suite/contracts'
   import { applyUpdates, createDocumentState, createTextDiffUpdate } from '@og-suite/crdt'
   import type { CrdtDocumentState, CrdtUpdate, Note, NoteFolder, PresencePeer, SyncEnvelope, SyncOperation } from '@og-suite/contracts'
-  import { createHttpApiClient, createRuntimeId } from '@og-suite/runtime'
+  import { createHttpApiClient, createRuntimeId, createSerialQueue } from '@og-suite/runtime'
   import type { RuntimeServices } from '@og-suite/runtime'
   import { bootstrapWorkspace, flushQueuedOperations, mergeEnvelope, pullChanges, queueOperation } from '@og-suite/sync'
   import { Editor, Extension } from '@tiptap/core'
@@ -78,7 +78,7 @@
   let editorText = ''
   let editorDocumentId = ''
   let lastSavedEditorText = ''
-  let saveDocumentChain: Promise<void> = Promise.resolve()
+  const enqueueSave = createSerialQueue()
   let draftTitle = ''
   let draftPath = '/'
   let status = 'Starting'
@@ -932,12 +932,10 @@
   // firing while a blur-triggered save was still mid-flight, for example),
   // the second one would diff against a stale baseline the first hadn't
   // committed yet, corrupting the CRDT text (dropped/duplicated
-  // characters). Chaining onto the previous call's promise guarantees each
-  // save only starts once the prior one has fully committed.
+  // characters). createSerialQueue guarantees each save only starts once
+  // the prior one has fully committed.
   function saveDocument(): Promise<void> {
-    const next = saveDocumentChain.then(() => saveDocumentNow(), () => saveDocumentNow())
-    saveDocumentChain = next
-    return next
+    return enqueueSave(saveDocumentNow)
   }
 
   async function saveDocumentNow() {

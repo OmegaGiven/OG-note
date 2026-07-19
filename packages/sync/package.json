@@ -6,9 +6,15 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "vitest run"
+  },
   "dependencies": {
     "@og-suite/contracts": "0.1.0",
     "@og-suite/runtime": "0.1.0"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.6"
   }
 }
 

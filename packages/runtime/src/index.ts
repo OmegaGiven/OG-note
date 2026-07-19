@@ -8,6 +8,24 @@ import type {
   SyncOperation,
 } from '@og-suite/contracts'
 
+/**
+ * Runs async tasks strictly one at a time, in call order — the queued task
+ * only starts once every task ahead of it has fully settled. Use this for
+ * any operation whose correctness depends on reading state that a prior
+ * call of the same operation just wrote (a text-diff save that reads
+ * "what changed since last save", for example): without serialization, two
+ * overlapping calls can each read the same stale pre-write state and
+ * silently produce a wrong or lossy result instead of throwing.
+ */
+export function createSerialQueue() {
+  let tail: Promise<unknown> = Promise.resolve()
+  return function enqueue<T>(task: () => Promise<T>): Promise<T> {
+    const result = tail.then(task, task)
+    tail = result.catch(() => undefined)
+    return result
+  }
+}
+
 export type ToolbarItem =
   | { kind: 'button'; id: string; label: string; command: string }
   | { kind: 'dropdown'; id: string; label: string; options: { label: string; command: string }[] }

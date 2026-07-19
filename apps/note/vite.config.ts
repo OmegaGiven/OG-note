@@ -1,9 +1,12 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
-import { readFileSync } from 'node:fs'
 
-const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')).version
+// npm sets this for any script it runs (npm run dev/build, and
+// beforeBuildCommand in tauri.conf.json goes through "npm run build" too),
+// so this always matches package.json's version with no file read needed
+// — a plain readFileSync here breaks svelte-check's own Vite config loader.
+const appVersion = process.env.npm_package_version ?? '0.0.0-dev'
 
 const alias = [
   { find: '@og-suite/ui/ActionBar', replacement: fileURLToPath(new URL('../../packages/ui/src/ActionBar.svelte', import.meta.url)) },
