@@ -11,6 +11,7 @@
     getRichFragment,
     hydrateLiveYDoc,
     syncLiveDocFromState,
+    syncPlainTextFieldFromMarkdown,
   } from '@og-suite/crdt'
   import type { CrdtDocumentState, CrdtUpdate, DocumentVersionSummary, Note, NoteFolder, PresencePeer, SyncEnvelope, SyncOperation } from '@og-suite/contracts'
   import { createHttpApiClient, createRuntimeId, createSerialQueue } from '@og-suite/runtime'
@@ -1034,6 +1035,11 @@
     if (editorRenderMode === 'rich' && liveYDoc && richDocumentId === activeEditorDocumentId) {
       exportRichEditorToMarkdown()
       lastSavedEditorText = editorText
+      // Keep the plain "content" field current too — see
+      // syncPlainTextFieldFromMarkdown's doc comment. This mutates the same
+      // liveYDoc that encodeDocUpdateSince is about to encode, so it rides
+      // along in the same update instead of needing a separate round trip.
+      syncPlainTextFieldFromMarkdown(liveYDoc, editorText)
       const payload = encodeDocUpdateSince(liveYDoc, liveYDocLastVector ?? getDocStateVector(liveYDoc))
       if (!payload) return
       liveYDocLastVector = getDocStateVector(liveYDoc)

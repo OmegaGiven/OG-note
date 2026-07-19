@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { createDocumentState } from './index'
-import { applyEncodedUpdate, encodeDocUpdateSince, getDocStateVector, getRichFragment, hydrateLiveYDoc, syncLiveDocFromState } from './index'
+import { applyUpdates, createDocumentState } from './index'
+import {
+  applyEncodedUpdate,
+  encodeDocUpdateSince,
+  getDocStateVector,
+  getRichFragment,
+  hydrateLiveYDoc,
+  syncLiveDocFromState,
+  syncPlainTextFieldFromMarkdown,
+} from './index'
 
 function xmlFragmentText(fragment: Y.XmlFragment): string {
   let text = ''
@@ -113,5 +121,44 @@ describe('live rich-editing primitives', () => {
     expect(xmlFragmentText(getRichFragment(liveDoc))).toBe('')
     syncLiveDocFromState(liveDoc, serverState)
     expect(xmlFragmentText(getRichFragment(liveDoc))).toBe('server-side content')
+  })
+
+  it('syncPlainTextFieldFromMarkdown keeps a TXT/MD viewer in sync with Rich-mode edits from another device', () => {
+    // Regression test for a real bug: two devices with different persisted
+    // mode preferences (Rich vs TXT/MD is a per-app-install localStorage
+    // choice, not per-note) never used to reconcile — a note edited in
+    // Rich mode on one device showed up completely empty in TXT/MD mode on
+    // the other, because they read different Yjs fields (richContent vs
+    // content) that were only ever reconciled at an in-session mode-switch
+    // boundary, not across devices.
+    const seed = createDocumentState('doc-7', 'note', '')
+    const richDevice = hydrateLiveYDoc(seed)
+    typeInto(getRichFragment(richDevice), 'typed only in rich mode')
+
+    // Mirrors what saveDocumentNow's rich branch now does: keep "content"
+    // current in the same doc/update as the rich edit itself.
+    syncPlainTextFieldFromMarkdown(richDevice, 'typed only in rich mode')
+
+    const vector = getDocStateVector(hydrateLiveYDoc(seed))
+    const payload = encodeDocUpdateSince(richDevice, vector)!
+    expect(payload).not.toBeNull()
+
+    // A plain TXT/MD device receiving this update (e.g. via the document
+    // websocket) applies it the ordinary way, via applyUpdates — no
+    // special-casing needed on the reading side.
+    const plainViewerState = {
+      ...seed,
+      updates: [
+        {
+          id: 'u1',
+          documentId: 'doc-7',
+          clientId: 'rich-device',
+          sequence: 1,
+          payload,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }
+    expect(applyUpdates(plainViewerState).text).toBe('typed only in rich mode')
   })
 })

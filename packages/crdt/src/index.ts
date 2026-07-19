@@ -131,6 +131,26 @@ export function syncLiveDocFromState(liveDoc: Y.Doc, state: CrdtDocumentState): 
 }
 
 /**
+ * Rich mode's edits live in a separate Yjs field (richContent, a
+ * Y.XmlFragment) from TXT/MD's plain "content" Y.Text — they used to only
+ * get reconciled at an explicit mode-switch boundary within the same
+ * session. Two devices with different *persisted* mode preferences (the
+ * toggle choice is saved to localStorage per app install) never hit that
+ * boundary at all: one always writes richContent, the other always reads
+ * "content", and they silently diverge — device B's TXT/MD view shows
+ * nothing device A typed in Rich mode. Calling this alongside every Rich
+ * save keeps "content" continuously up to date (via the same doc's shared
+ * update, not a separate round trip) so any TXT/MD viewer sees current
+ * text regardless of which mode last edited it. One-directional by
+ * design: a plain-mode edit does not currently regenerate richContent,
+ * since blindly re-parsing markdown into the XML fragment risks
+ * clobbering concurrent Rich-mode formatting on another device.
+ */
+export function syncPlainTextFieldFromMarkdown(doc: Y.Doc, markdown: string): void {
+  replaceTextWithMinimalEdit(doc.getText(textKey), markdown)
+}
+
+/**
  * Encodes everything that changed in `doc` since `sinceStateVector` as one
  * Yjs update, ready to hand to createTextDiffUpdate's sibling call sites
  * (queueOperation/publishUpdate) as a CrdtUpdate payload. Returns null if
