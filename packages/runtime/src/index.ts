@@ -106,10 +106,20 @@ export function registerApp(manifest: AppManifest): RegisteredApp {
   }
 }
 
-export function createHttpApiClient(baseUrl: string, getAccessToken?: () => string | null): ApiClient {
-  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const accessToken = getAccessToken?.()
-    const response = await fetch(`${baseUrl}${path}`, {
+export function createHttpApiClient(
+  baseUrl: string,
+  getAccessToken?: () => string | null,
+  onUnauthorized?: () => Promise<string | null>,
+): ApiClient {
+  // Sessions expire (12h server-side); without this every client would
+  // silently get logged out mid-day and have to re-enter credentials.
+  // A single in-flight refresh is shared so a burst of 401s (several
+  // requests failing around the same expiry moment) only triggers one
+  // refresh call instead of a stampede.
+  let refreshInFlight: Promise<string | null> | null = null
+
+  async function fetchOnce(method: string, path: string, body: unknown, accessToken: string | null) {
+    return fetch(`${baseUrl}${path}`, {
       method,
       headers: {
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
@@ -117,6 +127,18 @@ export function createHttpApiClient(baseUrl: string, getAccessToken?: () => stri
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
+  }
+
+  async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const accessToken = getAccessToken?.() ?? null
+    let response = await fetchOnce(method, path, body, accessToken)
+    if (response.status === 401 && onUnauthorized && path !== '/api/v1/auth/refresh') {
+      refreshInFlight ??= onUnauthorized().finally(() => {
+        refreshInFlight = null
+      })
+      const refreshedToken = await refreshInFlight
+      if (refreshedToken) response = await fetchOnce(method, path, body, refreshedToken)
+    }
     if (!response.ok) {
       const message = await response.text().catch(() => '')
       throw new Error(`${method} ${path} failed with ${response.status}${message ? `: ${message}` : ''}`)
