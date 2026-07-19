@@ -1,6 +1,9 @@
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
+import { readFileSync } from 'node:fs'
+
+const appVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8')).version
 
 const alias = [
   { find: '@og-suite/ui/ActionBar', replacement: fileURLToPath(new URL('../../packages/ui/src/ActionBar.svelte', import.meta.url)) },
@@ -19,4 +22,10 @@ export default defineConfig({
   base: process.env.OG_NOTES_BASE ?? '/',
   plugins: [svelte()],
   resolve: { alias },
+  define: {
+    // Single source of truth for the version shown in Settings — bump
+    // package.json's version and this follows automatically, no separate
+    // env var to remember to set.
+    'import.meta.env.VITE_OG_APP_VERSION': JSON.stringify(appVersion),
+  },
 })

@@ -31,7 +31,7 @@
   type SavedAppearanceTheme = AppearanceTheme
 
   const savedThemeStorageKey = 'og-suite:appearance-themes'
-  const clientVersion = import.meta.env.VITE_OG_APP_VERSION ?? '0.1.22'
+  const clientVersion = import.meta.env.VITE_OG_APP_VERSION ?? '0.0.0-dev'
 
   let backgroundImageInput: HTMLInputElement | null = null
   let backgroundTextureInput: HTMLInputElement | null = null
@@ -251,14 +251,14 @@
 
   async function loadSystemVersion() {
     if (!services || services.runtimeMode === 'local') {
-      versionStatus = `v${clientVersion}`
+      versionStatus = `App v${clientVersion}`
       return
     }
     try {
       systemVersion = await services.api.get<SystemVersion>('/api/v1/system/version')
-      versionStatus = `v${systemVersion.backendVersion}`
+      versionStatus = `App v${clientVersion} · Server v${systemVersion.backendVersion}`
     } catch {
-      versionStatus = `v${clientVersion}`
+      versionStatus = `App v${clientVersion}`
     }
   }
 

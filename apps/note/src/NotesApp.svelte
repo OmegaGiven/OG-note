@@ -466,15 +466,21 @@
     }
   }
 
-  function selectNote(note: Note) {
+  async function selectNote(note: Note) {
     const pendingDocumentId = editorDocumentId
     const hadSaveTimer = Boolean(saveTimer)
     if (saveTimer) {
       clearTimeout(saveTimer)
       saveTimer = null
     }
+    // Must be awaited, not fire-and-forget: this switch reads `envelope`
+    // for the note being opened a few lines down. If the outgoing note's
+    // save were still in flight when that read happens, switching back to
+    // it later would show whatever was in `envelope` before the save
+    // landed — i.e. the edit looks reverted even though it was never lost,
+    // just not committed yet.
     if (hadSaveTimer || hasPendingLocalEditorChange(pendingDocumentId)) {
-      void saveDocument()
+      await saveDocument()
     }
     selectedNoteId = note.id
     logSyncEvent(`Opened note ${note.title || note.id}`)
