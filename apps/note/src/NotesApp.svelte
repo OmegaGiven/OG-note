@@ -78,6 +78,7 @@
   let editorText = ''
   let editorDocumentId = ''
   let lastSavedEditorText = ''
+  let saveDocumentChain: Promise<void> = Promise.resolve()
   let draftTitle = ''
   let draftPath = '/'
   let status = 'Starting'
@@ -918,7 +919,22 @@
     if (folderPath) await moveFolderToFolder(folderPath, targetPath)
   }
 
-  async function saveDocument() {
+  // Every caller funnels through this queue instead of calling
+  // saveDocumentNow directly. saveDocumentNow diffs `editorText` against
+  // `lastSavedEditorText` and applies that diff to whatever document state
+  // is currently in `envelope` — if two calls ever overlapped (debounce
+  // firing while a blur-triggered save was still mid-flight, for example),
+  // the second one would diff against a stale baseline the first hadn't
+  // committed yet, corrupting the CRDT text (dropped/duplicated
+  // characters). Chaining onto the previous call's promise guarantees each
+  // save only starts once the prior one has fully committed.
+  function saveDocument(): Promise<void> {
+    const next = saveDocumentChain.then(() => saveDocumentNow(), () => saveDocumentNow())
+    saveDocumentChain = next
+    return next
+  }
+
+  async function saveDocumentNow() {
     if (editorRenderMode === 'rich') {
       exportRichEditorToMarkdown()
     }
