@@ -972,6 +972,71 @@ footer {
   padding: 0;
 }
 
+.multi-select-bar {
+  position: fixed;
+  z-index: 1000;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--field-radius, var(--og-field-radius));
+  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
+  box-shadow: var(--shadow, var(--og-shadow));
+  backdrop-filter: blur(16px);
+}
+
+.multi-select-bar > span {
+  color: var(--muted, var(--og-muted));
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.multi-select-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.multi-select-bar-actions button {
+  min-height: 32px;
+  border: 1px solid var(--border, var(--og-border));
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: var(--action-bar-bg, var(--og-action-bar-bg));
+  color: var(--text, var(--og-text));
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.multi-select-bar-actions button.danger-action {
+  border-color: color-mix(in srgb, var(--danger, var(--og-danger)) 60%, var(--border));
+  color: var(--danger, var(--og-danger));
+}
+
+.multi-select-bar-actions button:disabled {
+  opacity: 0.45;
+}
+
+.note-multiselect-check {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted, var(--og-muted));
+}
+
+.note-row.multi-selected {
+  border-color: var(--accent, var(--og-accent));
+  background: color-mix(in srgb, var(--accent, var(--og-accent)) 14%, transparent);
+}
+
+.note-row.multi-selected .note-multiselect-check {
+  color: var(--accent, var(--og-accent));
+}
+
 .list-style-menu {
   position: fixed;
   z-index: 1000;
@@ -1742,6 +1807,11 @@ textarea:focus {
   border-color: var(--danger-border, var(--og-danger-border));
   background: var(--danger-soft, var(--og-danger-soft));
   color: var(--danger, var(--og-danger));
+}
+
+.danger-action.active {
+  background: var(--danger, var(--og-danger));
+  color: var(--danger-soft, var(--og-danger-soft));
 }
 
 footer {

@@ -172,6 +172,10 @@
     | null = null
   let collapsedFolderPaths: string[] = []
   let favoriteNoteIds: string[] = loadFavoriteNoteIds()
+  let multiSelectMode = false
+  let multiSelectedNoteIds: Set<string> = new Set()
+  let multiSelectDeleteBusy = false
+  let deleteButtonPressTimer: ReturnType<typeof setTimeout> | null = null
   let mobileFilesOpen = false
   let editorFocused = false
   let sidebarWidth = 380
@@ -838,7 +842,7 @@
     event: PointerEvent,
     source: { kind: 'note'; id: string } | { kind: 'folder'; path: string },
   ) {
-    if (event.pointerType === 'mouse' || event.button !== 0) return
+    if (event.pointerType === 'mouse' || event.button !== 0 || multiSelectMode) return
     clearMobileTreePress()
     touchPressSource = source
     touchPressStartX = event.clientX
@@ -926,6 +930,10 @@
       event.preventDefault()
       event.stopPropagation()
       touchDragSuppressClick = false
+      return
+    }
+    if (multiSelectMode) {
+      toggleMultiSelectNote(note.id)
       return
     }
     selectNote(note)
@@ -1492,6 +1500,67 @@
       return
     }
     await deleteSelectedNote()
+  }
+
+  function startDeleteButtonPress() {
+    cancelDeleteButtonPress()
+    deleteButtonPressTimer = setTimeout(() => {
+      deleteButtonPressTimer = null
+      enterMultiSelectMode()
+    }, 500)
+  }
+
+  function cancelDeleteButtonPress() {
+    if (deleteButtonPressTimer) {
+      clearTimeout(deleteButtonPressTimer)
+      deleteButtonPressTimer = null
+    }
+  }
+
+  function handleDeleteButtonClick() {
+    // A long-press already fired enterMultiSelectMode and cleared the
+    // timer, so a real click event following it (pointerup->click) would
+    // otherwise also run the normal single-delete action. Guard on mode.
+    if (multiSelectMode) return
+    void deleteSelectedFileTarget()
+  }
+
+  function enterMultiSelectMode() {
+    multiSelectMode = true
+    multiSelectedNoteIds = new Set()
+    status = 'Select notes to delete'
+  }
+
+  function exitMultiSelectMode() {
+    multiSelectMode = false
+    multiSelectedNoteIds = new Set()
+  }
+
+  function toggleMultiSelectNote(noteId: string) {
+    const next = new Set(multiSelectedNoteIds)
+    if (next.has(noteId)) next.delete(noteId)
+    else next.add(noteId)
+    multiSelectedNoteIds = next
+  }
+
+  async function deleteMultiSelectedNotes() {
+    const ids = Array.from(multiSelectedNoteIds)
+    if (ids.length === 0) return
+    if (tokens.confirmDelete && !window.confirm(`Delete ${ids.length} note${ids.length === 1 ? '' : 's'}?`)) return
+    multiSelectDeleteBusy = true
+    try {
+      const deletedAt = new Date().toISOString()
+      for (const id of ids) {
+        await queueWorkspaceOperation({ kind: 'delete_note', id, deletedAt })
+      }
+      await refreshQueuedOperationCount()
+      envelope = await services.cache.loadEnvelope()
+      if (selectedNote && ids.includes(selectedNote.id)) selectedNoteId = ''
+      status = `Deleted ${ids.length} note${ids.length === 1 ? '' : 's'}`
+      exitMultiSelectMode()
+    } finally {
+      multiSelectDeleteBusy = false
+    }
   }
 
   function downloadSelectedNote() {
@@ -2415,11 +2484,16 @@
             <Icon name="download" size={18} />
           </button>
           <button
+            class:active={multiSelectMode}
             class="icon-only-button danger-action"
             aria-label={selectedFolderCanDelete ? 'Delete selected folder' : 'Delete selected note'}
-            title={selectedFolderCanDelete ? 'Delete selected folder' : 'Delete selected note'}
-            disabled={!selectedFolderCanDelete && !selectedNote}
-            on:click={deleteSelectedFileTarget}
+            title="Delete — hold to select multiple notes to delete"
+            disabled={multiSelectMode ? false : !selectedFolderCanDelete && !selectedNote && notes.length === 0}
+            on:pointerdown={startDeleteButtonPress}
+            on:pointerup={cancelDeleteButtonPress}
+            on:pointerleave={cancelDeleteButtonPress}
+            on:pointercancel={cancelDeleteButtonPress}
+            on:click={handleDeleteButtonClick}
           >
             <Icon name="delete" size={18} />
           </button>
@@ -2504,9 +2578,10 @@
               <button
                 class:selected={note.id === selectedNoteId}
                 class:dragging={draggedNoteId === note.id}
+                class:multi-selected={multiSelectedNoteIds.has(note.id)}
                 class="note-row file-row"
                 data-folder-drop-target="/"
-                draggable="true"
+                draggable={!multiSelectMode}
                 on:click={(event) => handleNoteRowClick(event, note)}
                 on:dragstart={(event) => startNoteDrag(event, note)}
                 on:dragend={endNoteDrag}
@@ -2515,6 +2590,9 @@
                 on:pointerup={endMobileTreePress}
                 on:pointercancel={cancelMobileTreePress}
               >
+                {#if multiSelectMode}
+                  <span class="note-multiselect-check" aria-hidden="true">{multiSelectedNoteIds.has(note.id) ? '☑' : '☐'}</span>
+                {/if}
                 <strong>{note.title}</strong>
                 <span
                   class:favorited={isFavoriteNote(note.id)}
@@ -2592,9 +2670,10 @@
                 <button
                   class:selected={note.id === selectedNoteId}
                   class:dragging={draggedNoteId === note.id}
+                  class:multi-selected={multiSelectedNoteIds.has(note.id)}
                   class="note-row file-row nested"
                   data-folder-drop-target={folder.path}
-                  draggable="true"
+                  draggable={!multiSelectMode}
                   on:click={(event) => handleNoteRowClick(event, note)}
                   on:dragstart={(event) => startNoteDrag(event, note)}
                   on:dragend={endNoteDrag}
@@ -2603,6 +2682,9 @@
                   on:pointerup={endMobileTreePress}
                   on:pointercancel={cancelMobileTreePress}
                 >
+                  {#if multiSelectMode}
+                    <span class="note-multiselect-check" aria-hidden="true">{multiSelectedNoteIds.has(note.id) ? '☑' : '☐'}</span>
+                  {/if}
                   <strong>{note.title}</strong>
                   <span
                     class:favorited={isFavoriteNote(note.id)}
@@ -2637,6 +2719,23 @@
         </button>
       {/if}
     </div>
+
+    {#if multiSelectMode}
+      <div class="multi-select-bar" role="toolbar" aria-label="Multi-select delete">
+        <span>{multiSelectedNoteIds.size} selected</span>
+        <div class="multi-select-bar-actions">
+          <button type="button" on:click={exitMultiSelectMode} disabled={multiSelectDeleteBusy}>Cancel</button>
+          <button
+            type="button"
+            class="danger-action"
+            disabled={multiSelectedNoteIds.size === 0 || multiSelectDeleteBusy}
+            on:click={() => void deleteMultiSelectedNotes()}
+          >
+            {multiSelectDeleteBusy ? 'Deleting…' : `Delete (${multiSelectedNoteIds.size})`}
+          </button>
+        </div>
+      </div>
+    {/if}
   </aside>
 
   <div
