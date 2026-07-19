@@ -32,6 +32,11 @@
   import AppearanceSettings from './AppearanceSettings.svelte'
 
   type EditorRenderMode = 'text' | 'markdown' | 'rich'
+
+  // MD mode's raw-source-plus-preview split is a desktop power-user
+  // feature; on a phone screen it just splits the note in half. Mobile
+  // only gets TXT/RICH in the mode toggle.
+  const isMobilePlatform = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
   type ListStyle = 'dash' | 'star' | 'checkbox' | 'numbered' | 'emoji'
   type SaveIndicatorState = 'saved' | 'pending' | 'syncing' | 'offline'
   type TocHeading = {
@@ -1787,6 +1792,7 @@
   function loadEditorRenderMode(): EditorRenderMode {
     if (typeof localStorage === 'undefined') return 'text'
     const stored = localStorage.getItem('og-suite:notes:editor-render-mode')
+    if (stored === 'markdown' && isMobilePlatform) return 'rich'
     if (stored === 'markdown' || stored === 'rich') return stored
     return 'text'
   }
@@ -1943,7 +1949,19 @@
       },
       onBlur: () => {
         editorFocused = false
-        applyDeferredDocumentRefresh()
+        // Unlike the plain-text textarea's handleEditorBlur, this used to
+        // skip straight to applyDeferredDocumentRefresh() without saving
+        // first. Blurring cancels nothing — the debounced save timer keeps
+        // running — but on mobile, backgrounding the app (switching apps,
+        // locking the screen) right after typing throttles/pauses that
+        // timer before it fires. Any deferred refresh that then runs
+        // reads the last *committed* text, not what was just typed —
+        // exactly the "typed something, it reverted" symptom. Saving
+        // first, same as the textarea path, closes that gap.
+        void (async () => {
+          await saveDocument()
+          applyDeferredDocumentRefresh()
+        })()
       },
       onTransaction: () => {
         requestRichActiveStateRefresh()
@@ -2240,13 +2258,15 @@
         >
           TXT
         </button>
-        <button
-          class:active={editorRenderMode === 'markdown'}
-          aria-pressed={editorRenderMode === 'markdown'}
-          on:click={() => setEditorRenderMode('markdown')}
-        >
-          MD
-        </button>
+        {#if !isMobilePlatform}
+          <button
+            class:active={editorRenderMode === 'markdown'}
+            aria-pressed={editorRenderMode === 'markdown'}
+            on:click={() => setEditorRenderMode('markdown')}
+          >
+            MD
+          </button>
+        {/if}
         <button
           class:active={editorRenderMode === 'rich'}
           aria-pressed={editorRenderMode === 'rich'}
