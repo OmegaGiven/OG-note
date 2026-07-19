@@ -2,7 +2,7 @@ import type { CrdtDocumentState, Note, SyncEnvelope } from '@og-suite/contracts'
 import { applyUpdates, createDocumentState } from '@og-suite/crdt'
 import type { LocalCache } from '@og-suite/runtime'
 import { exists, mkdir, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
-import { homeDir, join } from '@tauri-apps/api/path'
+import { appLocalDataDir, homeDir, join } from '@tauri-apps/api/path'
 
 /**
  * Real on-disk storage for local-only mode: notes as plain, portable
@@ -19,8 +19,16 @@ const indexFileName = 'index.json'
 
 type StoredIndex = Omit<SyncEnvelope, 'documents' | 'documentUpdates'>
 
+function isAndroid() {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+}
+
 async function vaultRoot() {
-  return join(await homeDir(), vaultDirName)
+  // Android's scoped storage blocks writes under the shared home dir
+  // (/storage/emulated/0) without extra runtime permissions, so mobile
+  // uses the app-private local data dir instead of ~/OGNote.
+  const base = isAndroid() ? await appLocalDataDir() : await homeDir()
+  return join(base, vaultDirName)
 }
 
 async function notesDir() {
