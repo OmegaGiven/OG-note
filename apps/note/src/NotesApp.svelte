@@ -1091,13 +1091,10 @@
     }
 
     // Mirror this TXT/MD edit into richContent too — see
-    // syncRichFragmentFromMarkdown's doc comment. Built off the same
-    // baseState the plain-text diff above used, so this is an independent
-    // delta from the same starting point rather than a replay of `update`.
-    const richSyncDoc = hydrateLiveYDoc(document)
-    const richSyncVector = getDocStateVector(richSyncDoc)
-    syncRichFragmentFromMarkdown(richSyncDoc, nextText)
-    const richPayload = encodeDocUpdateSince(richSyncDoc, richSyncVector)
+    // syncRichFragmentFromMarkdown's doc comment. Reuses a persistent
+    // headless doc/editor for this documentId across saves instead of
+    // rebuilding one every time.
+    const richPayload = syncRichFragmentFromMarkdown(activeEditorDocumentId, document, nextText)
     if (richPayload) {
       const richUpdate = {
         id: createRuntimeId('update'),
@@ -2020,6 +2017,7 @@
     unsubscribePresence?.()
     unsubscribeDocumentUpdates?.()
     destroyRichEditor()
+    destroyHeadlessSyncEditor()
     if (saveTimer) clearTimeout(saveTimer)
     if (flushTimer) clearTimeout(flushTimer)
     for (const timer of liveUpdateFallbackTimers.values()) clearTimeout(timer)
@@ -2208,22 +2206,50 @@
   //
   // There's no plain-text equivalent of replaceTextWithMinimalEdit for a
   // Y.XmlFragment (structural tree, not a flat sequence), so this goes
-  // through a real, detached Tiptap Editor bound to the same liveDoc via
+  // through a real, detached Tiptap Editor bound to a live Y.Doc via
   // Collaboration — the same machinery the visible Rich editor uses — and
   // lets it translate a full setContent() into the correct Y updates via
   // ySyncPlugin. Like the initial-seed case this can clobber concurrent
   // Rich-mode formatting on another device if both edit at once; that's an
   // accepted tradeoff over the previous behavior of never propagating at
   // all.
-  function syncRichFragmentFromMarkdown(liveDoc: Y.Doc, markdown: string) {
-    const detachedElement = window.document.createElement('div')
-    const headlessEditor = new Editor({
-      element: detachedElement,
-      extensions: richContentExtensions(liveDoc),
-      editable: true,
-    })
-    headlessEditor.commands.setContent(renderMarkdown(markdown), { emitUpdate: true })
-    headlessEditor.destroy()
+  //
+  // Reported slow/unsnappy typing on Android traced partly to this: every
+  // debounced save was building and tearing down a whole Editor instance
+  // (all 15+ extensions, a fresh ProseMirror EditorState) from scratch.
+  // Kept alive per documentId instead — same lifecycle as the visible Rich
+  // editor's liveYDoc — so a plain-mode editing session pays that cost
+  // once, not on every save.
+  let headlessSyncEditor: Editor | null = null
+  let headlessSyncDoc: Y.Doc | null = null
+  let headlessSyncDocumentId = ''
+  let headlessSyncVector: Uint8Array | null = null
+
+  function destroyHeadlessSyncEditor() {
+    headlessSyncEditor?.destroy()
+    headlessSyncEditor = null
+    headlessSyncDoc?.destroy()
+    headlessSyncDoc = null
+    headlessSyncDocumentId = ''
+    headlessSyncVector = null
+  }
+
+  function syncRichFragmentFromMarkdown(documentId: string, baseState: CrdtDocumentState, markdown: string): string | null {
+    if (headlessSyncDocumentId !== documentId) {
+      destroyHeadlessSyncEditor()
+      headlessSyncDoc = hydrateLiveYDoc(baseState)
+      headlessSyncVector = getDocStateVector(headlessSyncDoc)
+      headlessSyncEditor = new Editor({
+        element: window.document.createElement('div'),
+        extensions: richContentExtensions(headlessSyncDoc),
+        editable: true,
+      })
+      headlessSyncDocumentId = documentId
+    }
+    headlessSyncEditor!.commands.setContent(renderMarkdown(markdown), { emitUpdate: true })
+    const payload = encodeDocUpdateSince(headlessSyncDoc!, headlessSyncVector ?? getDocStateVector(headlessSyncDoc!))
+    headlessSyncVector = getDocStateVector(headlessSyncDoc!)
+    return payload
   }
 
   function ensureRichEditor() {
