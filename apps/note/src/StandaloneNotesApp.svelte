@@ -7,7 +7,14 @@
 
   const localModeKey = 'og-suite:notes:local-only'
   const connectedServersKey = 'og-suite:notes:connected-servers'
-  const canUseLocalOnly = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+  // Local-only mode ("Continue without signing in") is normally desktop/
+  // mobile (Tauri) only — the go-server web UI build wants to require a
+  // real sign-in. The GitHub Pages demo build opts in via
+  // VITE_OG_NOTES_DEMO_MODE (see vite.config.ts): the underlying runtime
+  // already works in a plain browser, this is purely a UI gate.
+  const canUseLocalOnly =
+    (typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window))
+    || import.meta.env.VITE_OG_NOTES_DEMO_MODE === true
 
   const defaultServerUrl = (() => {
     if (typeof window === 'undefined') return 'http://127.0.0.1:8080'
@@ -311,6 +318,12 @@
         <button class="standalone-auth-secondary" type="button" on:click={continueLocally}>
           Continue without signing in
         </button>
+      {/if}
+      {#if import.meta.env.VITE_OG_NOTES_DEMO_MODE === true}
+        <p class="standalone-auth-demo-note">
+          This is a live demo — "Continue without signing in" stores notes only in this
+          browser (no account, no server). Clearing site data erases them.
+        </p>
       {/if}
     </form>
   </main>

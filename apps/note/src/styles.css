@@ -171,6 +171,13 @@ button:has(.og-icon) {
   font-size: 13px;
 }
 
+.standalone-auth-demo-note {
+  color: var(--standalone-auth-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .standalone-notes-shell {
   min-height: 100vh;
 }

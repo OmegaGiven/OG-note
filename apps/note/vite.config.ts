@@ -30,5 +30,12 @@ export default defineConfig({
     // package.json's version and this follows automatically, no separate
     // env var to remember to set.
     'import.meta.env.VITE_OG_APP_VERSION': JSON.stringify(appVersion),
+    // Unlocks "Continue without signing in" (local-only mode) outside of
+    // Tauri too — normally gated to the desktop/mobile app only, since the
+    // go-server web UI build wants to require a real sign-in. The
+    // underlying local-only runtime already works in a plain browser (see
+    // runtime.ts's createLocalCache) — only the UI gate needed a way to
+    // opt in, for the GitHub Pages demo build (OG_NOTES_DEMO=1).
+    'import.meta.env.VITE_OG_NOTES_DEMO_MODE': JSON.stringify(process.env.OG_NOTES_DEMO === '1'),
   },
 })
