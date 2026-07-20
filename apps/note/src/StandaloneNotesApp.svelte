@@ -5,15 +5,23 @@
   import NotesApp from './NotesApp.svelte'
   import { createLocalOnlyRuntime, createStandaloneRuntime } from './runtime'
 
+  const localModeKey = 'og-suite:notes:local-only'
+  const connectedServersKey = 'og-suite:notes:connected-servers'
+  const canUseLocalOnly = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
+
   const defaultServerUrl = (() => {
     if (typeof window === 'undefined') return 'http://127.0.0.1:8080'
+    // Tauri's WebView serves the app itself from tauri://localhost /
+    // http://tauri.localhost — that's the app's own origin, never a real
+    // note server, so falling back to it (as window.location.origin would)
+    // pre-fills the sign-in form with a URL that can never work. Desktop
+    // dev server (vite on localhost:5174) is the one case where the app's
+    // own origin doubles as a real backend during local development.
+    if (canUseLocalOnly) return ''
     if (window.location.protocol === 'file:') return 'http://127.0.0.1:8080'
     if (window.location.hostname === 'localhost') return 'http://127.0.0.1:8080'
     return window.location.origin
   })()
-  const localModeKey = 'og-suite:notes:local-only'
-  const connectedServersKey = 'og-suite:notes:connected-servers'
-  const canUseLocalOnly = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window)
 
   type ConnectedServer = {
     id: string
