@@ -20,7 +20,20 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.omegagiven.ognote"
         minSdk = 24
-        targetSdk = 36
+        // Was 36 (matching compileSdk). On at least one real device (Galaxy
+        // S24, Adreno 750) targeting the newest SDK made Android's
+        // ActivityThread opt this app into Vulkan-backed HWUI rendering by
+        // default, and that device's Vulkan driver failed to build its
+        // shader pipeline on startup — a permanent blank-white-screen bug,
+        // not fixable from app code (debug.hwui.renderer is a system-wide
+        // property, not app-scoped). The only in-app workaround was
+        // android:hardwareAccelerated="false" on MainActivity, which fixed
+        // the crash but forced the whole UI onto software rendering,
+        // making typing/scrolling noticeably laggy. Pinning targetSdk to
+        // 34 avoids the Vulkan opt-in in the first place, so hardware
+        // acceleration can stay on (see AndroidManifest.xml) — verify on
+        // the affected device before assuming this alone is sufficient.
+        targetSdk = 34
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
