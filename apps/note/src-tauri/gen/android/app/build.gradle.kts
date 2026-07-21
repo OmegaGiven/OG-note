@@ -20,20 +20,18 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.omegagiven.ognote"
         minSdk = 24
-        // Was 36 (matching compileSdk). On at least one real device (Galaxy
-        // S24, Adreno 750) targeting the newest SDK made Android's
-        // ActivityThread opt this app into Vulkan-backed HWUI rendering by
-        // default, and that device's Vulkan driver failed to build its
-        // shader pipeline on startup — a permanent blank-white-screen bug,
-        // not fixable from app code (debug.hwui.renderer is a system-wide
-        // property, not app-scoped). The only in-app workaround was
-        // android:hardwareAccelerated="false" on MainActivity, which fixed
-        // the crash but forced the whole UI onto software rendering,
-        // making typing/scrolling noticeably laggy. Pinning targetSdk to
-        // 34 avoids the Vulkan opt-in in the first place, so hardware
-        // acceleration can stay on (see AndroidManifest.xml) — verify on
-        // the affected device before assuming this alone is sufficient.
-        targetSdk = 34
+        // Tried pinning this to 34 (below compileSdk) to see if it avoided
+        // Android opting this app into Vulkan-backed HWUI rendering by
+        // default — on at least one real device (Galaxy S24, Adreno 750)
+        // that opt-in led to a Vulkan driver bug that intermittently fails
+        // to paint anything at all (permanent blank white screen on
+        // launch). 10 clean cold-launch cycles at targetSdk 34 initially
+        // looked like a fix, but the white screen recurred later on the
+        // same device/build — this didn't actually solve it, just made it
+        // less frequent. Reverted to 36 (matching compileSdk); see
+        // AndroidManifest.xml's android:hardwareAccelerated="false" for the
+        // fix that's actually held up under repeated testing.
+        targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
