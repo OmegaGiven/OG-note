@@ -3,6 +3,16 @@ import { applyTokens, defaultTokens, loadThemeMode, resolveTheme } from '@og-too
 import StandaloneNotesApp from './StandaloneNotesApp.svelte'
 import './styles.css'
 
+// EXPERIMENTAL, see styles.css's .og-no-backdrop-blur rule: testing
+// whether the app's pervasive backdrop-filter: blur() usage is what
+// triggers the AdrenoVK "Shader compilation failed" white-screen bug on
+// Android, as an alternative to disabling hardware acceleration
+// entirely (see AndroidManifest.xml). Remove this block (and the CSS
+// rule) once resolved either way.
+if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) {
+  document.documentElement.classList.add('og-no-backdrop-blur')
+}
+
 // Apply the resolved theme (system or independent, see @og-toolkit/theme)
 // before mounting, so the app never flashes its bundled default colors
 // first. resolveTheme can end up waiting on a Tauri fs plugin IPC call

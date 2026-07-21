@@ -2670,3 +2670,20 @@ footer {
     display: none;
   }
 }
+
+/*
+ * EXPERIMENTAL: testing whether backdrop-filter: blur() (used ~20 places
+ * throughout this file for the frosted-glass look on cards/dialogs/
+ * toolbars) is what triggers the AdrenoVK "Shader compilation failed"
+ * white-screen crash on some Android devices with hardware acceleration
+ * enabled — backdrop-filter compiles to a runtime GPU blur shader, which
+ * is exactly the kind of thing known to trip driver bugs like this one.
+ * See main.ts, which adds .og-no-backdrop-blur on <html> for Android.
+ * If this holds up under testing, it lets hardware acceleration stay on
+ * (fast typing/scrolling) instead of the current fallback of disabling
+ * it entirely (see AndroidManifest.xml). Remove this rule (and the JS
+ * that adds the class) once resolved either way.
+ */
+.og-no-backdrop-blur * {
+  backdrop-filter: none !important;
+}

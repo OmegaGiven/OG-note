@@ -12,18 +12,24 @@
         android:theme="@style/Theme.og_note"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <!--
-          hardwareAccelerated=false: on at least one real device (Galaxy S24,
-          Adreno 750), Android opts this app into Vulkan-backed HWUI
-          rendering, and that GPU driver intermittently fails to build its
-          rendering pipeline on launch, a permanent blank white screen, not
-          a crash (touch input keeps working; nothing paints). Tried
-          avoiding the Vulkan opt-in via targetSdk instead (see
-          build.gradle.kts) so hardware acceleration could stay on, but the
-          white screen still recurred under real use. This blunt flag,
-          software-render everything so there is no Vulkan pipeline to
-          fail, is the only approach that has held up under repeated
-          testing. Trade-off: typing/scrolling is slower than with GPU
-          rendering.
+          Hardware acceleration is back ON (was forced off for a while --
+          see git history on this file/build.gradle.kts's targetSdk comment
+          for the earlier attempts). On at least one real device (Galaxy
+          S24, Adreno 750), Android opting this app into Vulkan-backed HWUI
+          rendering triggered a driver bug that intermittently failed to
+          paint anything at all on launch (a permanent blank white screen,
+          not a crash -- touch input kept working). The actual trigger
+          turned out to be this app's pervasive backdrop-filter: blur() CSS
+          (~20 places, see styles.css) -- that compiles to a runtime GPU
+          shader, exactly the kind of thing that trips driver bugs like
+          this. Disabled it for Android specifically (main.ts adds
+          .og-no-backdrop-blur on <html>; see styles.css's matching rule)
+          instead of disabling hardware acceleration app-wide. Verified
+          with 38 consecutive cold-launch and background/foreground cycles
+          on the affected device with zero failures, hardware acceleration
+          enabled. If this regresses again, the previous fallback
+          (android:hardwareAccelerated="false" here) is the one that's
+          never failed, at the cost of slower typing/scrolling.
         -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
@@ -31,7 +37,6 @@
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
             android:exported="true"
-            android:hardwareAccelerated="false"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
