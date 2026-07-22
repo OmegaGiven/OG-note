@@ -175,6 +175,14 @@
   let favoriteNoteIds: string[] = loadFavoriteNoteIds()
   let multiSelectMode = false
   let multiSelectedNoteIds: Set<string> = new Set()
+  // Long-pressing a note on mobile arms move-mode (see startMobileTreePress)
+  // and, if released without dropping onto a folder, toggles this note as
+  // "selected for download" without opening it. Opening a note on mobile
+  // replaces the entire list view (and its toolbar, including the
+  // download button) with the editor, so there was previously no way to
+  // download a note without also navigating away from the button that
+  // does it. Holding the same note again clears the selection.
+  let downloadSelectedNoteId = ''
   let multiSelectDeleteBusy = false
   let deleteButtonPressTimer: ReturnType<typeof setTimeout> | null = null
   let mobileFilesOpen = false
@@ -882,10 +890,23 @@
     const targetPath = dragTargetPath
     const source = touchPressSource
     clearMobileTreePress(false)
-    if (!wasActive || !source || !targetPath) return
+    if (!wasActive || !source) return
     event.preventDefault()
     event.stopPropagation()
-    if (source.kind === 'note') await moveNoteToFolder(source.id, targetPath)
+    if (!targetPath) {
+      // Long-press-then-release with no folder drop: toggle download
+      // selection instead of doing nothing (see downloadSelectedNoteId's
+      // doc comment). Folders don't get this — only notes have a
+      // download action to select for.
+      if (source.kind === 'note') {
+        downloadSelectedNoteId = downloadSelectedNoteId === source.id ? '' : source.id
+      }
+      return
+    }
+    if (source.kind === 'note') {
+      await moveNoteToFolder(source.id, targetPath)
+      if (downloadSelectedNoteId === source.id) downloadSelectedNoteId = ''
+    }
     if (source.kind === 'folder') await moveFolderToFolder(source.path, targetPath)
     draggedNoteId = ''
     draggedFolderPath = ''
@@ -1558,6 +1579,7 @@
   function enterMultiSelectMode() {
     multiSelectMode = true
     multiSelectedNoteIds = new Set()
+    downloadSelectedNoteId = ''
     status = 'Select notes to delete'
   }
 
@@ -1594,9 +1616,25 @@
   }
 
   function downloadSelectedNote() {
+    // A note held-selected for download (see downloadSelectedNoteId) isn't
+    // open in the editor, so editorText won't have its content — read the
+    // current text straight from its document state instead, the same way
+    // any other not-currently-open note's text is derived elsewhere.
+    if (downloadSelectedNoteId) {
+      const note = notes.find((item) => item.id === downloadSelectedNoteId)
+      const documentState = note && envelope?.documents.find((item) => item.id === note.documentId)
+      if (note && documentState) {
+        downloadNoteText(note.title, applyUpdates(documentState).text)
+        return
+      }
+    }
     if (!selectedNote) return
-    const safeTitle = (selectedNote.title.trim() || 'Untitled note').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'note'
-    const blob = new Blob([editorText], { type: 'text/markdown;charset=utf-8' })
+    downloadNoteText(selectedNote.title, editorText)
+  }
+
+  function downloadNoteText(title: string, text: string) {
+    const safeTitle = (title.trim() || 'Untitled note').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'note'
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
@@ -2577,7 +2615,7 @@
           >
             <Icon name="rename" size={18} />
           </button>
-          <button class="icon-only-button" aria-label="Download selected note" title="Download selected note" disabled={!selectedNote} on:click={downloadSelectedNote}>
+          <button class="icon-only-button" aria-label="Download selected note" title="Download selected note" disabled={!selectedNote && !downloadSelectedNoteId} on:click={downloadSelectedNote}>
             <Icon name="download" size={18} />
           </button>
           <button
@@ -2676,6 +2714,7 @@
                 class:selected={note.id === selectedNoteId}
                 class:dragging={draggedNoteId === note.id}
                 class:multi-selected={multiSelectedNoteIds.has(note.id)}
+                class:download-selected={downloadSelectedNoteId === note.id}
                 class="note-row file-row"
                 data-folder-drop-target="/"
                 draggable={!multiSelectMode}
@@ -2768,6 +2807,7 @@
                   class:selected={note.id === selectedNoteId}
                   class:dragging={draggedNoteId === note.id}
                   class:multi-selected={multiSelectedNoteIds.has(note.id)}
+                class:download-selected={downloadSelectedNoteId === note.id}
                   class="note-row file-row nested"
                   data-folder-drop-target={folder.path}
                   draggable={!multiSelectMode}

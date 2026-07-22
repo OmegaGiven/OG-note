@@ -505,7 +505,12 @@ footer {
 
 .editor-mode-toggle {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* Was a hardcoded repeat(3, ...) — always reserved 3 equal columns even
+     when MD is hidden on mobile (only TXT/RICH render), leaving a dead
+     empty third column. grid-auto-flow/grid-auto-columns instead sizes
+     columns to however many mode buttons actually exist. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 4px;
   margin-bottom: var(--space-sm, 8px);
   padding: max(3px, calc(var(--space-xs, 6px) * 0.67));
@@ -1042,6 +1047,11 @@ footer {
 
 .note-row.multi-selected .note-multiselect-check {
   color: var(--accent, var(--og-accent));
+}
+
+.note-row.download-selected {
+  border-color: var(--accent, var(--og-accent));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, var(--og-accent)) 45%, transparent);
 }
 
 .list-style-menu {
