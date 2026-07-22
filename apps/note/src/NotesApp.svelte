@@ -102,6 +102,11 @@
   let status = 'Starting'
   let loggedStatus = ''
   let statusDialogOpen = false
+  // Tracks which document's versions are currently loaded, so the reactive
+  // load-trigger below only actually fires on a real note switch or the
+  // dialog opening — not every time `selectedNote` gets a new object
+  // reference (which happens on every periodic pull, same note or not).
+  let versionsLoadedForDocumentId = ''
   let documentVersions: DocumentVersionSummary[] = []
   let versionsLoading = false
   let versionsError = ''
@@ -453,23 +458,43 @@
     }
   }
 
-  async function loadDocumentVersions() {
+  // Background/periodic refreshes (silent: true) must never touch anything
+  // the user can see unless the version list actually changed — this used
+  // to unconditionally flip versionsLoading and replace documentVersions
+  // with a freshly-deserialized (so always a new object identity) array
+  // every ~1200ms pull tick, which made the whole version history section
+  // flicker in and out of a loading state every second even though nothing
+  // had changed.
+  async function loadDocumentVersions(options: { silent?: boolean } = {}) {
     if (isLocalRuntime || !selectedNote) {
-      documentVersions = []
+      if (!options.silent) documentVersions = []
       return
     }
-    versionsLoading = true
-    versionsError = ''
+    if (!options.silent) {
+      versionsLoading = true
+      versionsError = ''
+    }
     try {
-      documentVersions = await services.api.get<DocumentVersionSummary[]>(
+      const next = await services.api.get<DocumentVersionSummary[]>(
         `/api/v1/documents/${selectedNote.documentId}/versions`,
       )
+      if (!sameDocumentVersionList(documentVersions, next)) documentVersions = next
     } catch (error) {
-      versionsError = error instanceof Error ? error.message : 'Could not load version history.'
-      documentVersions = []
+      if (!options.silent) {
+        versionsError = error instanceof Error ? error.message : 'Could not load version history.'
+        documentVersions = []
+      }
     } finally {
-      versionsLoading = false
+      if (!options.silent) versionsLoading = false
     }
+  }
+
+  function sameDocumentVersionList(a: DocumentVersionSummary[], b: DocumentVersionSummary[]) {
+    if (a.length !== b.length) return false
+    return a.every((item, index) => {
+      const other = b[index]
+      return other && item.id === other.id && item.createdAt === other.createdAt && item.reason === other.reason
+    })
   }
 
   async function restoreDocumentVersion(versionId: string) {
@@ -494,7 +519,11 @@
     }
   }
 
-  $: if (statusDialogOpen && selectedNote) void loadDocumentVersions()
+  $: if (!statusDialogOpen) versionsLoadedForDocumentId = ''
+  $: if (statusDialogOpen && selectedNote && selectedNote.documentId !== versionsLoadedForDocumentId) {
+    versionsLoadedForDocumentId = selectedNote.documentId
+    void loadDocumentVersions()
+  }
 
   async function refreshQueuedOperationCount() {
     const queued = await services.syncQueue.list()
@@ -1488,6 +1517,7 @@
         lastSyncPullAt = new Date().toLocaleTimeString()
         refreshSelectedEditorFromEnvelope()
         await refreshSelectedDocumentFromServer()
+        if (statusDialogOpen && selectedNote) void loadDocumentVersions({ silent: true })
       } catch (error) {
         lastSyncError = `${new Date().toLocaleTimeString()} - pull fallback failed`
         console.debug('Remote pull fallback failed', error)
