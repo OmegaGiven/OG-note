@@ -1122,29 +1122,47 @@ footer {
   padding: 0;
   border: 0;
   border-radius: 0;
-  background: color-mix(in srgb, var(--bg, var(--og-bg)) 48%, transparent);
-  backdrop-filter: blur(3px);
+  background: transparent;
   cursor: default;
+}
+
+.toc-hover-edge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1090;
+  width: 18px;
+  height: 100%;
 }
 
 .toc-popover {
   position: fixed;
-  top: max(72px, calc(env(safe-area-inset-top) + var(--space-xl, 20px)));
-  left: 50%;
+  top: 0;
+  right: 0;
   z-index: 1101;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
-  width: min(520px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 112px));
-  transform: translateX(-50%);
-  padding: 8px;
+  width: min(320px, calc(100vw - 32px));
+  height: 100vh;
+  max-height: 100vh;
+  padding: calc(env(safe-area-inset-top) + 16px) 8px 16px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: var(--field-radius, var(--og-field-radius));
+  border-left: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 0;
   background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
   box-shadow: var(--shadow, var(--og-shadow));
   backdrop-filter: blur(16px);
+  animation: toc-slide-in 160ms ease-out;
+}
+
+@keyframes toc-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
 .toc-popover-heading {

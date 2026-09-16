@@ -158,6 +158,9 @@
   let tableMenuOpen = false
   let richTableMenuStyle = ''
   let tocOpen = false
+  let tocAutoHideTimer: number | undefined
+  let tocSwipeStartX = 0
+  let tocSwipeTracking = false
   let listMenuOpen = false
   let listMenuStyle = ''
   let searchOpen = false
@@ -1852,6 +1855,52 @@
     return headings
   }
 
+  function scheduleTocAutoHide() {
+    if (typeof window === 'undefined') return
+    window.clearTimeout(tocAutoHideTimer)
+    tocAutoHideTimer = window.setTimeout(() => {
+      tocOpen = false
+    }, 1600)
+  }
+
+  function cancelTocAutoHide() {
+    if (typeof window === 'undefined') return
+    window.clearTimeout(tocAutoHideTimer)
+  }
+
+  function peekToc() {
+    if (tocHeadings.length === 0) return
+    tocOpen = true
+    scheduleTocAutoHide()
+  }
+
+  function handleEditorScrollForToc() {
+    syncEditorGutterScroll()
+    peekToc()
+  }
+
+  function handleShellTouchStart(event: TouchEvent) {
+    const touch = event.touches[0]
+    if (!touch || typeof window === 'undefined') return
+    if (window.innerWidth - touch.clientX > 24) return
+    tocSwipeStartX = touch.clientX
+    tocSwipeTracking = true
+  }
+
+  function handleShellTouchMove(event: TouchEvent) {
+    if (!tocSwipeTracking) return
+    const touch = event.touches[0]
+    if (!touch) return
+    if (tocSwipeStartX - touch.clientX > 40) {
+      tocSwipeTracking = false
+      peekToc()
+    }
+  }
+
+  function handleShellTouchEnd() {
+    tocSwipeTracking = false
+  }
+
   function jumpToHeading(heading: TocHeading) {
     tocOpen = false
     if (editorRenderMode === 'rich' && richEditor) {
@@ -2926,7 +2975,15 @@
     on:pointercancel={stopSidebarResize}
   ></div>
 
-  <section class:editor-focused={editorFocused} class="editor-shell">
+  <section
+    class:editor-focused={editorFocused}
+    class="editor-shell"
+    aria-label="Editor"
+    on:touchstart={handleShellTouchStart}
+    on:touchmove={handleShellTouchMove}
+    on:touchend={handleShellTouchEnd}
+    on:touchcancel={handleShellTouchEnd}
+  >
     <div class="metadata">
       <div class="note-title-panel">
         {#if selectedNote}
@@ -2959,7 +3016,7 @@
         class:active-action={tocOpen}
         aria-label="Table of contents"
         title="Table of contents"
-        on:click={() => tocOpen = !tocOpen}
+        on:click={() => { cancelTocAutoHide(); tocOpen = !tocOpen }}
       >
         <Icon name="list" size={18} />
       </button>
@@ -3027,9 +3084,24 @@
         </select>
       </label>
     </ActionBar>
+    {#if selectedNote && tocHeadings.length > 0}
+      <div
+        class="toc-hover-edge"
+        aria-hidden="true"
+        on:mouseenter={peekToc}
+        on:mouseleave={scheduleTocAutoHide}
+      ></div>
+    {/if}
     {#if tocOpen}
       <button class="toc-backdrop" aria-label="Close table of contents" on:click={() => tocOpen = false}></button>
-      <div class="toc-popover" role="dialog" aria-label="Table of contents">
+      <div
+        class="toc-popover"
+        role="dialog"
+        aria-label="Table of contents"
+        tabindex="-1"
+        on:mouseenter={cancelTocAutoHide}
+        on:mouseleave={scheduleTocAutoHide}
+      >
         <div class="toc-popover-heading">Table of contents</div>
         {#if tocHeadings.length > 0}
           <div class="toc-list">
@@ -3066,6 +3138,7 @@
             bind:this={richEditorElement}
             use:richTableHost
             class="rich-editor-host"
+            on:scroll={peekToc}
           >
             {#if tableMenuOpen && richTableMenuStyle}
               <div
@@ -3102,7 +3175,7 @@
               on:pointerup={captureTextSelection}
               on:focus={() => (editorFocused = true)}
               on:blur={() => void handleEditorBlur()}
-              on:scroll={syncEditorGutterScroll}
+              on:scroll={handleEditorScrollForToc}
               spellcheck="true"
             ></textarea>
           </div>
