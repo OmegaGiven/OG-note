@@ -1148,12 +1148,26 @@ footer {
   max-height: 100vh;
   padding: calc(env(safe-area-inset-top) + 16px) 8px 16px;
   overflow: hidden;
-  border-left: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border: none;
   border-radius: 0;
-  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
-  box-shadow: var(--shadow, var(--og-shadow));
-  backdrop-filter: blur(16px);
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
   animation: toc-slide-in 160ms ease-out;
+}
+
+.toc-popover-heading,
+.toc-item span,
+.toc-item strong {
+  text-shadow:
+    0 1px 3px color-mix(in srgb, var(--bg, var(--og-bg)) 85%, black),
+    0 0 8px color-mix(in srgb, var(--bg, var(--og-bg)) 70%, black);
+}
+
+.toc-item:hover,
+.toc-item:focus-visible {
+  background: color-mix(in srgb, var(--bg, var(--og-bg)) 40%, transparent);
+  backdrop-filter: blur(6px);
 }
 
 @keyframes toc-slide-in {
@@ -1214,6 +1228,9 @@ footer {
   padding: 6px;
   color: var(--muted, var(--og-muted));
   font-size: 0.82rem;
+  text-shadow:
+    0 1px 3px color-mix(in srgb, var(--bg, var(--og-bg)) 85%, black),
+    0 0 8px color-mix(in srgb, var(--bg, var(--og-bg)) 70%, black);
 }
 
 .ai-menu {
