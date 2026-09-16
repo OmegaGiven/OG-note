@@ -18,7 +18,7 @@
   import type { RuntimeServices } from '@og-suite/runtime'
   import { bootstrapWorkspace, flushQueuedOperations, mergeEnvelope, pullChanges, queueOperation } from '@og-suite/sync'
   import * as Y from 'yjs'
-  import { Editor, Extension } from '@tiptap/core'
+  import { Editor, Extension, Mark, mergeAttributes } from '@tiptap/core'
   import Collaboration from '@tiptap/extension-collaboration'
   import StarterKit from '@tiptap/starter-kit'
   import Underline from '@tiptap/extension-underline'
@@ -54,6 +54,18 @@
   type SaveIndicatorState = 'saved' | 'pending' | 'syncing' | 'offline'
   type AiBackendKind = 'ollama' | 'anthropic'
   type AiActionKind = 'polish' | 'expand' | 'summarize' | 'ask'
+  type NoteCommentDto = {
+    id: string
+    noteId: string
+    anchorId: string
+    anchorText: string
+    body: string
+    authorLabel: string
+    isAi: boolean
+    resolved: boolean
+    createdAt: string
+    updatedAt: string
+  }
   type TocHeading = {
     id: string
     level: number
@@ -177,6 +189,14 @@
   let aiResultRange: { start: number; end: number } | null = null
   let aiAskPromptOpen = false
   let aiAskInstruction = ''
+  let commentsPanelOpen = false
+  let commentHighlightsVisible = true
+  let noteComments: NoteCommentDto[] = []
+  let loadedCommentsNoteId = ''
+  let commentComposeOpen = false
+  let commentComposeText = ''
+  let commentComposeRange: { from: number; to: number } | null = null
+  let commentComposeSnippet = ''
   let listMenuStyle = ''
   let searchOpen = false
   let searchQuery = ''
@@ -287,6 +307,13 @@
   $: selectedDocument = selectedNote ? envelope?.documents.find((doc) => doc.id === selectedNote.documentId) ?? null : null
   $: renderedMarkdown = editorRenderMode === 'markdown' ? renderMarkdown(editorText) : ''
   $: editorLineCount = Math.max(1, editorText.split('\n').length)
+  $: if (selectedNote && selectedNote.id !== loadedCommentsNoteId) {
+    loadedCommentsNoteId = selectedNote.id
+    void loadNoteComments()
+  } else if (!selectedNote && loadedCommentsNoteId) {
+    loadedCommentsNoteId = ''
+    noteComments = []
+  }
   $: if (editorRenderMode === 'rich' && selectedNote && selectedDocument && richEditorElement) {
     ensureRichEditor()
   }
@@ -2023,6 +2050,140 @@
     aiResultRange = null
   }
 
+  async function loadNoteComments() {
+    if (!selectedNote) {
+      noteComments = []
+      return
+    }
+    try {
+      noteComments = await services.api.get<NoteCommentDto[]>(`/api/v1/notes/${selectedNote.id}/comments`)
+    } catch {
+      noteComments = []
+    }
+  }
+
+  function openCommentCompose() {
+    aiMenuOpen = false
+    if (editorRenderMode !== 'rich' || !richEditor) {
+      aiError = 'Comments require Rich text mode.'
+      return
+    }
+    const { from, to, empty } = richEditor.state.selection
+    if (empty) {
+      aiError = 'Select some text to comment on.'
+      return
+    }
+    commentComposeRange = { from, to }
+    commentComposeSnippet = richEditor.state.doc.textBetween(from, to, ' ').slice(0, 200)
+    commentComposeText = ''
+    commentComposeOpen = true
+  }
+
+  async function submitCommentCompose() {
+    if (!commentComposeRange || !selectedNote || !richEditor || !commentComposeText.trim()) return
+    const commentId = createRuntimeId('comment')
+    const range = commentComposeRange
+    const body = commentComposeText.trim()
+    const snippet = commentComposeSnippet
+    commentComposeOpen = false
+    richEditor.chain().setTextSelection(range).setMark('commentHighlight', { commentId }).run()
+    try {
+      const created = await services.api.post<NoteCommentDto>(`/api/v1/notes/${selectedNote.id}/comments`, {
+        anchorId: commentId,
+        anchorText: snippet,
+        body,
+        isAi: false,
+      })
+      noteComments = [...noteComments, created]
+      commentsPanelOpen = true
+    } catch {
+      aiError = 'Failed to save comment'
+      richEditor.commands.unsetCommentHighlightById(commentId)
+    }
+  }
+
+  async function runAiReviewComment() {
+    aiMenuOpen = false
+    if (aiAvailableBackends.length === 0) {
+      aiError = 'No AI backend configured on the server.'
+      return
+    }
+    if (editorRenderMode !== 'rich' || !richEditor || !selectedNote) {
+      aiError = 'AI feedback comments require Rich text mode.'
+      return
+    }
+    const { from, to, empty } = richEditor.state.selection
+    if (empty) {
+      aiError = 'Select some text for AI feedback.'
+      return
+    }
+    const text = richEditor.state.doc.textBetween(from, to, '\n')
+    aiBusy = true
+    aiError = ''
+    try {
+      const res = await services.api.post<{ result: string }>('/api/v1/ai/assist', {
+        action: 'review',
+        text,
+        backend: aiSelectedBackend || undefined,
+      })
+      const commentId = createRuntimeId('comment')
+      richEditor.chain().setTextSelection({ from, to }).setMark('commentHighlight', { commentId }).run()
+      const created = await services.api.post<NoteCommentDto>(`/api/v1/notes/${selectedNote.id}/comments`, {
+        anchorId: commentId,
+        anchorText: text.slice(0, 200),
+        body: res.result,
+        isAi: true,
+      })
+      noteComments = [...noteComments, created]
+      commentsPanelOpen = true
+    } catch (error) {
+      aiError = error instanceof Error ? error.message : 'AI feedback failed'
+    } finally {
+      aiBusy = false
+    }
+  }
+
+  function focusNoteComment(comment: NoteCommentDto) {
+    if (editorRenderMode !== 'rich' || !richEditor) return
+    let target: { from: number; to: number } | null = null
+    richEditor.state.doc.descendants((node: any, pos: number) => {
+      if (target) return false
+      node.marks.forEach((mark: any) => {
+        if (mark.type.name === 'commentHighlight' && mark.attrs.commentId === comment.anchorId) {
+          target = { from: pos, to: pos + node.nodeSize }
+        }
+      })
+      return true
+    })
+    if (target) {
+      richEditor.chain().focus().setTextSelection(target).scrollIntoView().run()
+    }
+  }
+
+  async function toggleNoteCommentResolved(comment: NoteCommentDto) {
+    try {
+      const updated = await services.api.patch<NoteCommentDto>(`/api/v1/comments/${comment.id}`, {
+        resolved: !comment.resolved,
+      })
+      noteComments = noteComments.map((existing) => (existing.id === comment.id ? updated : existing))
+    } catch {
+      aiError = 'Failed to update comment'
+    }
+  }
+
+  async function deleteNoteComment(comment: NoteCommentDto) {
+    if (editorRenderMode === 'rich' && richEditor) {
+      richEditor.commands.unsetCommentHighlightById(comment.anchorId)
+    }
+    try {
+      await services.api.delete(`/api/v1/comments/${comment.id}`)
+    } catch {
+      // best-effort: local list is still updated below even if the
+      // server call fails, since the highlight mark is already gone
+    }
+    noteComments = noteComments.filter((existing) => existing.id !== comment.id)
+  }
+
   function jumpToHeading(heading: TocHeading) {
     tocOpen = false
     if (editorRenderMode === 'rich' && richEditor) {
@@ -2410,6 +2571,47 @@
     },
   })
 
+  // Lives inside the Yjs XmlFragment like any other mark, so it travels
+  // through Collaboration/CRDT sync with the text it wraps — no separate
+  // position bookkeeping needed. Comment content itself lives server-side
+  // (note_comments table), keyed by this commentId attribute.
+  const CommentHighlight = Mark.create({
+    name: 'commentHighlight',
+    addAttributes() {
+      return {
+        commentId: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.getAttribute('data-comment-id'),
+          renderHTML: (attributes: { commentId?: string }) =>
+            attributes.commentId ? { 'data-comment-id': attributes.commentId } : {},
+        },
+      }
+    },
+    parseHTML() {
+      return [{ tag: 'span[data-comment-id]' }]
+    },
+    renderHTML({ HTMLAttributes }: any) {
+      return ['span', mergeAttributes(HTMLAttributes, { class: 'comment-highlight' }), 0]
+    },
+    addCommands() {
+      return {
+        unsetCommentHighlightById:
+          (commentId: string) =>
+          ({ tr, state, dispatch }: any) => {
+            state.doc.descendants((node: any, pos: number) => {
+              node.marks.forEach((mark: any) => {
+                if (mark.type.name === 'commentHighlight' && mark.attrs.commentId === commentId) {
+                  tr.removeMark(pos, pos + node.nodeSize, mark.type)
+                }
+              })
+            })
+            if (dispatch) dispatch(tr)
+            return true
+          },
+      } as any
+    },
+  })
+
   // Shared between the real (visible, DOM-bound) Rich editor and the
   // headless one-off editor used to translate a TXT/MD-mode edit into
   // richContent (see syncRichFragmentFromMarkdown) — both must resolve to
@@ -2431,6 +2633,7 @@
       FontFamily,
       Color,
       Highlight.configure({ multicolor: true }),
+      CommentHighlight,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -3151,6 +3354,26 @@
       >
         <Icon name="sparkle" size={18} />
       </button>
+      <button aria-label="Add comment" title="Add comment on selection" on:click={openCommentCompose}>
+        <Icon name="chat" size={18} />
+      </button>
+      <button
+        class:active-action={commentsPanelOpen}
+        aria-label="Comments"
+        title={`Comments${noteComments.length > 0 ? ` (${noteComments.length})` : ''}`}
+        on:click={() => (commentsPanelOpen = !commentsPanelOpen)}
+      >
+        <Icon name="chat" size={18} />
+        {#if noteComments.length > 0}<span class="comment-count-badge">{noteComments.length}</span>{/if}
+      </button>
+      <button
+        class:active-action={!commentHighlightsVisible}
+        aria-label="Toggle comment highlights"
+        title={commentHighlightsVisible ? 'Hide comment highlights' : 'Show comment highlights'}
+        on:click={() => (commentHighlightsVisible = !commentHighlightsVisible)}
+      >
+        <Icon name="visibility" size={18} />
+      </button>
       <button aria-label="Undo" title="Undo" on:click={() => runCommand('undo')}><Icon name="undo" size={18} /></button>
       <button aria-label="Redo" title="Redo" on:click={() => runCommand('redo')}><Icon name="redo" size={18} /></button>
       <label class:active-action={richCommandActive('heading-1', richActiveStateVersion) || richCommandActive('heading-2', richActiveStateVersion) || richCommandActive('heading-3', richActiveStateVersion) || richCommandActive('heading-4', richActiveStateVersion) || richCommandActive('heading-5', richActiveStateVersion) || richCommandActive('heading-6', richActiveStateVersion)} class="icon-select-tool" title="Heading">
@@ -3271,6 +3494,10 @@
           <strong>Custom ask&hellip;</strong>
           <span>Ask a question or give an instruction</span>
         </button>
+        <button role="menuitem" on:click={() => void runAiReviewComment()}>
+          <strong>AI feedback</strong>
+          <span>Leave a comment with AI's thoughts (Rich mode)</span>
+        </button>
         {#if aiAvailableBackends.length > 1}
           <div class="ai-menu-backend">
             <span>Backend</span>
@@ -3329,6 +3556,51 @@
         </div>
       </div>
     {/if}
+    {#if commentComposeOpen}
+      <button class="toc-backdrop" aria-label="Close comment compose" on:click={() => (commentComposeOpen = false)}></button>
+      <div class="ai-ask-dialog" role="dialog" aria-label="Add comment">
+        <div class="toc-popover-heading">Comment on &ldquo;{commentComposeSnippet.slice(0, 80)}{commentComposeSnippet.length > 80 ? '…' : ''}&rdquo;</div>
+        <textarea
+          bind:value={commentComposeText}
+          placeholder="Write a comment&hellip;"
+          rows="3"
+          on:keydown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) void submitCommentCompose()
+          }}
+        ></textarea>
+        <div class="ai-ask-actions">
+          <button on:click={() => (commentComposeOpen = false)}>Cancel</button>
+          <button class="primary" disabled={!commentComposeText.trim()} on:click={() => void submitCommentCompose()}>Comment</button>
+        </div>
+      </div>
+    {/if}
+    {#if commentsPanelOpen}
+      <button class="toc-backdrop" aria-label="Close comments panel" on:click={() => (commentsPanelOpen = false)}></button>
+      <div class="toc-popover comments-panel" role="dialog" aria-label="Comments">
+        <div class="toc-popover-heading">Comments</div>
+        {#if noteComments.length > 0}
+          <div class="toc-list">
+            {#each noteComments as comment (comment.id)}
+              <div class="comment-card" class:resolved={comment.resolved}>
+                <button class="comment-card-anchor" on:click={() => focusNoteComment(comment)}>
+                  &ldquo;{comment.anchorText.slice(0, 60)}{comment.anchorText.length > 60 ? '…' : ''}&rdquo;
+                </button>
+                <div class="comment-card-body">
+                  <span class="comment-card-author">{comment.isAi ? 'AI' : comment.authorLabel}</span>
+                  {comment.body}
+                </div>
+                <div class="comment-card-actions">
+                  <button on:click={() => void toggleNoteCommentResolved(comment)}>{comment.resolved ? 'Unresolve' : 'Resolve'}</button>
+                  <button on:click={() => void deleteNoteComment(comment)}>Delete</button>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p>No comments on this note yet.</p>
+        {/if}
+      </div>
+    {/if}
     {#if listMenuOpen}
       <div class="list-style-menu" role="menu" tabindex="-1" aria-label="List style" style={listMenuStyle} on:mousedown={(event) => event.preventDefault()}>
         <button role="menuitem" on:click={() => runCommand('list-dash')}><span>•</span><strong>Dash list</strong></button>
@@ -3346,6 +3618,7 @@
             bind:this={richEditorElement}
             use:richTableHost
             class="rich-editor-host"
+            class:hide-comment-highlights={!commentHighlightsVisible}
             on:scroll={peekToc}
           >
             {#if tableMenuOpen && richTableMenuStyle}

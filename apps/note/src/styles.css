@@ -1378,6 +1378,95 @@ footer {
   color: inherit;
 }
 
+.comment-highlight {
+  background: color-mix(in srgb, var(--warning, var(--og-warning)) 30%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--warning, var(--og-warning)) 60%, transparent);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.hide-comment-highlights .comment-highlight {
+  background: transparent;
+  border-bottom-color: transparent;
+}
+
+.comment-count-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent, var(--og-accent));
+  color: var(--text-inverse, var(--og-text-inverse));
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 15px;
+}
+
+.comments-panel {
+  gap: 8px;
+  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
+  box-shadow: var(--shadow, var(--og-shadow));
+  backdrop-filter: blur(16px);
+}
+
+.comments-panel .toc-popover-heading,
+.comments-panel p {
+  text-shadow: none;
+}
+
+.comment-card {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: var(--surface, var(--og-surface));
+}
+
+.comment-card.resolved {
+  opacity: 0.6;
+}
+
+.comment-card-anchor {
+  width: 100%;
+  padding: 2px 0;
+  color: var(--muted, var(--og-muted));
+  font-size: 0.72rem;
+  font-style: italic;
+  text-align: left;
+}
+
+.comment-card-body {
+  color: var(--text, var(--og-text));
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.comment-card-author {
+  margin-right: 6px;
+  color: var(--accent, var(--og-accent));
+  font-weight: 800;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.comment-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.comment-card-actions button {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+}
+
 .note-title-panel input:first-child {
   flex: 1 1 220px;
   min-width: 0;
