@@ -1150,7 +1150,7 @@ footer {
   overflow: hidden;
   border: none;
   border-radius: 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--nav-bg) 50%, transparent);
   box-shadow: none;
   backdrop-filter: none;
   animation: toc-slide-in 160ms ease-out;
