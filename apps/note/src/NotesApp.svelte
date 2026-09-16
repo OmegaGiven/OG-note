@@ -52,6 +52,8 @@
   const isMobilePlatform = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
   type ListStyle = 'dash' | 'star' | 'checkbox' | 'numbered' | 'emoji'
   type SaveIndicatorState = 'saved' | 'pending' | 'syncing' | 'offline'
+  type AiBackendKind = 'ollama' | 'anthropic'
+  type AiActionKind = 'polish' | 'expand' | 'summarize' | 'ask'
   type TocHeading = {
     id: string
     level: number
@@ -162,6 +164,19 @@
   let tocSwipeStartX = 0
   let tocSwipeTracking = false
   let listMenuOpen = false
+  let aiMenuOpen = false
+  let aiBusy = false
+  let aiError = ''
+  let aiAvailableBackends: AiBackendKind[] = []
+  let aiDefaultBackend: AiBackendKind | null = null
+  let aiSelectedBackend: AiBackendKind | '' = ''
+  let aiResultOpen = false
+  let aiResultText = ''
+  let aiResultAction: AiActionKind | null = null
+  let aiResultMode: 'text' | 'rich' = 'text'
+  let aiResultRange: { start: number; end: number } | null = null
+  let aiAskPromptOpen = false
+  let aiAskInstruction = ''
   let listMenuStyle = ''
   let searchOpen = false
   let searchQuery = ''
@@ -370,6 +385,7 @@
 
   async function start() {
     applyTokens(services.tokens)
+    void loadAiConfig()
     await discardLegacyQueuedDocumentUpdates()
     await refreshQueuedOperationCount()
     envelope = await bootstrapWorkspace(services)
@@ -1901,6 +1917,112 @@
     tocSwipeTracking = false
   }
 
+  async function loadAiConfig() {
+    try {
+      const cfg = await services.api.get<{ available: AiBackendKind[]; default_backend: AiBackendKind | null }>(
+        '/api/v1/ai/config',
+      )
+      aiAvailableBackends = cfg.available
+      aiDefaultBackend = cfg.default_backend
+      aiSelectedBackend = cfg.default_backend ?? (cfg.available[0] ?? '')
+    } catch {
+      aiAvailableBackends = []
+      aiDefaultBackend = null
+    }
+  }
+
+  function currentAiSelection(): { text: string; mode: 'text' | 'rich'; range: { start: number; end: number } } {
+    if (editorRenderMode === 'rich' && richEditor) {
+      const { from, to, empty } = richEditor.state.selection
+      if (!empty) {
+        return { text: richEditor.state.doc.textBetween(from, to, '\n'), mode: 'rich', range: { start: from, end: to } }
+      }
+      const end = richEditor.state.doc.content.size
+      return { text: richEditor.state.doc.textBetween(0, end, '\n'), mode: 'rich', range: { start: 0, end } }
+    }
+    const sel = selection()
+    if (sel.start !== sel.end) {
+      return { text: sel.selected, mode: 'text', range: { start: sel.start, end: sel.end } }
+    }
+    return { text: editorText, mode: 'text', range: { start: 0, end: editorText.length } }
+  }
+
+  async function runAiAction(action: AiActionKind, instruction?: string) {
+    aiMenuOpen = false
+    if (aiAvailableBackends.length === 0) {
+      aiError = 'No AI backend configured on the server.'
+      return
+    }
+    const target = currentAiSelection()
+    if (!target.text.trim()) {
+      aiError = 'Nothing to work with — select text or write something first.'
+      return
+    }
+    aiBusy = true
+    aiError = ''
+    try {
+      const res = await services.api.post<{ result: string }>('/api/v1/ai/assist', {
+        action,
+        text: target.text,
+        instruction: instruction || undefined,
+        backend: aiSelectedBackend || undefined,
+      })
+      aiResultText = res.result
+      aiResultAction = action
+      aiResultMode = target.mode
+      aiResultRange = target.range
+      aiResultOpen = true
+    } catch (error) {
+      aiError = error instanceof Error ? error.message : 'AI request failed'
+    } finally {
+      aiBusy = false
+    }
+  }
+
+  function openAiAskPrompt() {
+    aiMenuOpen = false
+    aiAskInstruction = ''
+    aiAskPromptOpen = true
+  }
+
+  function submitAiAskPrompt() {
+    if (!aiAskInstruction.trim()) return
+    aiAskPromptOpen = false
+    void runAiAction('ask', aiAskInstruction.trim())
+  }
+
+  function applyAiResult() {
+    if (!aiResultRange) return
+    const insertOnly = aiResultAction === 'summarize' || aiResultAction === 'ask'
+    if (aiResultMode === 'rich' && richEditor) {
+      if (insertOnly) {
+        richEditor.chain().focus().insertContentAt(aiResultRange.end, `\n\n${aiResultText}`).run()
+      } else {
+        richEditor.chain().focus().insertContentAt(aiResultRange, aiResultText).run()
+      }
+    } else if (insertOnly) {
+      replaceRange(aiResultRange.end, aiResultRange.end, `\n\n${aiResultText}`)
+    } else {
+      replaceRange(aiResultRange.start, aiResultRange.end, aiResultText)
+    }
+    closeAiResult()
+  }
+
+  async function copyAiResult() {
+    try {
+      await navigator.clipboard.writeText(aiResultText)
+    } catch {
+      // clipboard access denied; nothing more we can do here
+    }
+  }
+
+  function closeAiResult() {
+    aiResultOpen = false
+    aiResultText = ''
+    aiResultAction = null
+    aiResultRange = null
+  }
+
   function jumpToHeading(heading: TocHeading) {
     tocOpen = false
     if (editorRenderMode === 'rich' && richEditor) {
@@ -3020,6 +3142,15 @@
       >
         <Icon name="list" size={18} />
       </button>
+      <button
+        class:active-action={aiMenuOpen}
+        aria-label="AI assist"
+        title="AI assist"
+        disabled={aiBusy}
+        on:click={() => (aiMenuOpen = !aiMenuOpen)}
+      >
+        <Icon name="sparkle" size={18} />
+      </button>
       <button aria-label="Undo" title="Undo" on:click={() => runCommand('undo')}><Icon name="undo" size={18} /></button>
       <button aria-label="Redo" title="Redo" on:click={() => runCommand('redo')}><Icon name="redo" size={18} /></button>
       <label class:active-action={richCommandActive('heading-1', richActiveStateVersion) || richCommandActive('heading-2', richActiveStateVersion) || richCommandActive('heading-3', richActiveStateVersion) || richCommandActive('heading-4', richActiveStateVersion) || richCommandActive('heading-5', richActiveStateVersion) || richCommandActive('heading-6', richActiveStateVersion)} class="icon-select-tool" title="Heading">
@@ -3119,6 +3250,83 @@
         {:else}
           <p>No headings in this note.</p>
         {/if}
+      </div>
+    {/if}
+    {#if aiMenuOpen}
+      <button class="toc-backdrop" aria-label="Close AI menu" on:click={() => (aiMenuOpen = false)}></button>
+      <div class="ai-menu" role="menu" tabindex="-1" aria-label="AI assist">
+        <button role="menuitem" on:click={() => void runAiAction('polish')}>
+          <strong>Polish this</strong>
+          <span>Fix grammar and tighten wording</span>
+        </button>
+        <button role="menuitem" on:click={() => void runAiAction('expand')}>
+          <strong>Add more detail</strong>
+          <span>Expand with descriptive detail</span>
+        </button>
+        <button role="menuitem" on:click={() => void runAiAction('summarize')}>
+          <strong>Summarize this</strong>
+          <span>Insert a concise summary below</span>
+        </button>
+        <button role="menuitem" on:click={openAiAskPrompt}>
+          <strong>Custom ask&hellip;</strong>
+          <span>Ask a question or give an instruction</span>
+        </button>
+        {#if aiAvailableBackends.length > 1}
+          <div class="ai-menu-backend">
+            <span>Backend</span>
+            <select bind:value={aiSelectedBackend}>
+              {#each aiAvailableBackends as backend}
+                <option value={backend}>{backend === 'ollama' ? 'Ollama (local)' : 'Anthropic'}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+        {#if aiAvailableBackends.length === 0}
+          <p class="ai-menu-empty">No AI backend configured on the server.</p>
+        {/if}
+      </div>
+    {/if}
+    {#if aiAskPromptOpen}
+      <button class="toc-backdrop" aria-label="Close ask prompt" on:click={() => (aiAskPromptOpen = false)}></button>
+      <div class="ai-ask-dialog" role="dialog" aria-label="Custom AI ask">
+        <div class="toc-popover-heading">Ask AI about this text</div>
+        <textarea
+          bind:value={aiAskInstruction}
+          placeholder="e.g. Rewrite this as bullet points"
+          rows="3"
+          on:keydown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submitAiAskPrompt()
+          }}
+        ></textarea>
+        <div class="ai-ask-actions">
+          <button on:click={() => (aiAskPromptOpen = false)}>Cancel</button>
+          <button class="primary" disabled={!aiAskInstruction.trim()} on:click={submitAiAskPrompt}>Ask</button>
+        </div>
+      </div>
+    {/if}
+    {#if aiBusy}
+      <div class="ai-status-toast" role="status">Asking AI&hellip;</div>
+    {/if}
+    {#if aiError}
+      <div class="ai-status-toast ai-status-error" role="alert">
+        {aiError}
+        <button aria-label="Dismiss" on:click={() => (aiError = '')}>&times;</button>
+      </div>
+    {/if}
+    {#if aiResultOpen}
+      <button class="toc-backdrop" aria-label="Close AI result" on:click={closeAiResult}></button>
+      <div class="ai-result-panel" role="dialog" aria-label="AI result">
+        <div class="toc-popover-heading">
+          {aiResultAction === 'polish' ? 'Polished text' : aiResultAction === 'expand' ? 'Expanded text' : aiResultAction === 'summarize' ? 'Summary' : 'Answer'}
+        </div>
+        <div class="ai-result-text">{aiResultText}</div>
+        <div class="ai-ask-actions">
+          <button on:click={closeAiResult}>Discard</button>
+          <button on:click={() => void copyAiResult()}>Copy</button>
+          <button class="primary" on:click={applyAiResult}>
+            {aiResultAction === 'polish' || aiResultAction === 'expand' ? 'Replace selection' : 'Insert below'}
+          </button>
+        </div>
       </div>
     {/if}
     {#if listMenuOpen}

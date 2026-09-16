@@ -50,6 +50,7 @@
     | 'participants'
     | 'undo'
     | 'redo'
+    | 'sparkle'
   export let size = 24
   export let label = ''
   export let className = ''
@@ -105,6 +106,9 @@
   {:else if name === 'redo'}
     <path d="M15.25 8.25h4V4.25" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
     <path d="M19.1 8.2a7.2 7.2 0 1 0-2.1 5.1" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" />
+  {:else if name === 'sparkle'}
+    <path d="M12 4.25 13.4 9.6l5.35 1.4-5.35 1.4L12 17.75l-1.4-5.35-5.35-1.4 5.35-1.4L12 4.25Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+    <path d="M18.5 15.5l.6 2 2 .6-2 .6-.6 2-.6-2-2-.6 2-.6.6-2Z" fill="currentColor" stroke="none" />
   {:else if name === 'delete'}
     <path d="M5.75 7.25h12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
     <path d="M9.25 7.25v-1.5A1.75 1.75 0 0 1 11 4h2a1.75 1.75 0 0 1 1.75 1.75v1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />

@@ -1216,6 +1216,151 @@ footer {
   font-size: 0.82rem;
 }
 
+.ai-menu {
+  position: fixed;
+  top: max(72px, calc(env(safe-area-inset-top) + var(--space-xl, 20px)));
+  left: 50%;
+  z-index: 1101;
+  display: grid;
+  gap: 2px;
+  width: min(320px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--field-radius, var(--og-field-radius));
+  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
+  box-shadow: var(--shadow, var(--og-shadow));
+  backdrop-filter: blur(16px);
+}
+
+.ai-menu button {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: transparent;
+  color: var(--text, var(--og-text));
+  text-align: left;
+}
+
+.ai-menu button:hover {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border) 66%);
+  background: color-mix(in srgb, var(--accent-soft, var(--og-accent-soft)) 60%, transparent);
+}
+
+.ai-menu button strong {
+  font-size: 0.86rem;
+}
+
+.ai-menu button span {
+  color: var(--muted, var(--og-muted));
+  font-size: 0.74rem;
+}
+
+.ai-menu-backend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 9px 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  margin-top: 4px;
+  color: var(--muted, var(--og-muted));
+  font-size: 0.78rem;
+}
+
+.ai-menu-empty {
+  margin: 0;
+  padding: 6px 9px;
+  color: var(--muted, var(--og-muted));
+  font-size: 0.78rem;
+}
+
+.ai-ask-dialog,
+.ai-result-panel {
+  position: fixed;
+  top: max(72px, calc(env(safe-area-inset-top) + var(--space-xl, 20px)));
+  left: 50%;
+  z-index: 1101;
+  display: grid;
+  gap: 8px;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(560px, calc(100vh - 112px));
+  transform: translateX(-50%);
+  padding: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--field-radius, var(--og-field-radius));
+  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
+  box-shadow: var(--shadow, var(--og-shadow));
+  backdrop-filter: blur(16px);
+}
+
+.ai-ask-dialog textarea {
+  width: 100%;
+  min-height: 72px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: var(--tool-bg, var(--og-tool-bg));
+  color: var(--text, var(--og-text));
+}
+
+.ai-ask-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ai-ask-actions button.primary {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border) 50%);
+  background: color-mix(in srgb, var(--accent-soft, var(--og-accent-soft)) 70%, transparent);
+  color: var(--accent, var(--og-accent));
+  font-weight: 700;
+}
+
+.ai-result-text {
+  overflow: auto;
+  max-height: 360px;
+  padding: 8px;
+  border-radius: calc(var(--field-radius, var(--og-field-radius)) - 2px);
+  background: var(--tool-bg, var(--og-tool-bg));
+  color: var(--text, var(--og-text));
+  font-size: 0.86rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.ai-status-toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  left: 50%;
+  z-index: 1102;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: var(--field-radius, var(--og-field-radius));
+  background: color-mix(in srgb, var(--nav-bg) 92%, var(--surface) 8%);
+  box-shadow: var(--shadow, var(--og-shadow));
+  color: var(--text, var(--og-text));
+  font-size: 0.82rem;
+  backdrop-filter: blur(16px);
+}
+
+.ai-status-error {
+  border-color: color-mix(in srgb, var(--danger, var(--og-danger)) 60%, var(--border) 40%);
+  color: var(--danger, var(--og-danger));
+}
+
+.ai-status-error button {
+  color: inherit;
+}
+
 .note-title-panel input:first-child {
   flex: 1 1 220px;
   min-width: 0;
