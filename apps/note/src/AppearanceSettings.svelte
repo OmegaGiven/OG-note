@@ -116,7 +116,7 @@
   function applyThemePreset(nextTokens: DesignTokens, mode: ThemeMode, name = mode === 'light' ? 'Light theme' : mode === 'dark' ? 'Dark theme' : 'Custom theme') {
     selectedThemeMode = mode
     themeName = name
-    commitTokens(normalizeTokens({ ...nextTokens, confirmDelete: tokens.confirmDelete }))
+    commitTokens(normalizeTokens({ ...nextTokens, confirmDelete: tokens.confirmDelete, showLineNumbers: tokens.showLineNumbers }))
   }
 
   function commitTokens(nextTokens: DesignTokens, persist = true) {
@@ -627,6 +627,12 @@
       <label class="settings-toggle">
         <input type="checkbox" checked={tokens.confirmDelete} on:change={(event) => patch({ confirmDelete: event.currentTarget.checked })} />
         <span>Confirm before delete actions</span>
+      </label>
+    </div>
+    <div class="settings-card">
+      <label class="settings-toggle">
+        <input type="checkbox" checked={tokens.showLineNumbers} on:change={(event) => patch({ showLineNumbers: event.currentTarget.checked })} />
+        <span>Show line numbers in editor</span>
       </label>
     </div>
   </section>

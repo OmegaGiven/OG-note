@@ -138,6 +138,7 @@
   let settingsOpen = false
   let tokens = services.tokens
   let editorElement: HTMLTextAreaElement | null = null
+  let editorGutterElement: HTMLDivElement | null = null
   let richEditorElement: HTMLDivElement | null = null
   let richEditor: Editor | null = null
   let richDocumentId = ''
@@ -267,6 +268,7 @@
   $: selectedFolderCanDelete = selectedFolderPath !== '' && selectedFolderPath !== '/' && (selectedFolderNotes.length > 0 || selectedFolderFolders.length > 0)
   $: selectedDocument = selectedNote ? envelope?.documents.find((doc) => doc.id === selectedNote.documentId) ?? null : null
   $: renderedMarkdown = editorRenderMode === 'markdown' ? renderMarkdown(editorText) : ''
+  $: editorLineCount = Math.max(1, editorText.split('\n').length)
   $: if (editorRenderMode === 'rich' && selectedNote && selectedDocument && richEditorElement) {
     ensureRichEditor()
   }
@@ -1749,6 +1751,11 @@
     markEditorInteraction()
   }
 
+  function syncEditorGutterScroll() {
+    if (!editorElement || !editorGutterElement) return
+    editorGutterElement.scrollTop = editorElement.scrollTop
+  }
+
   function undoRedo(command: 'undo' | 'redo') {
     editorElement?.focus()
     document.execCommand(command)
@@ -3076,19 +3083,29 @@
             {/if}
           </div>
         {:else}
-          <textarea
-            bind:this={editorElement}
-            bind:value={editorText}
-            aria-label={editorRenderMode === 'markdown' ? 'Markdown source' : 'Note text'}
-            on:input={handleEditorInput}
-            on:select={captureTextSelection}
-            on:keyup={captureTextSelection}
-            on:pointerdown={markEditorInteraction}
-            on:pointerup={captureTextSelection}
-            on:focus={() => (editorFocused = true)}
-            on:blur={() => void handleEditorBlur()}
-            spellcheck="true"
-          ></textarea>
+          <div class="editor-text-row" class:with-gutter={tokens.showLineNumbers}>
+            {#if tokens.showLineNumbers}
+              <div class="editor-line-gutter" bind:this={editorGutterElement} aria-hidden="true">
+                {#each Array(editorLineCount) as _, index}
+                  <span class="editor-line-number">{index + 1}</span>
+                {/each}
+              </div>
+            {/if}
+            <textarea
+              bind:this={editorElement}
+              bind:value={editorText}
+              aria-label={editorRenderMode === 'markdown' ? 'Markdown source' : 'Note text'}
+              on:input={handleEditorInput}
+              on:select={captureTextSelection}
+              on:keyup={captureTextSelection}
+              on:pointerdown={markEditorInteraction}
+              on:pointerup={captureTextSelection}
+              on:focus={() => (editorFocused = true)}
+              on:blur={() => void handleEditorBlur()}
+              on:scroll={syncEditorGutterScroll}
+              spellcheck="true"
+            ></textarea>
+          </div>
         {/if}
         {#if editorRenderMode === 'markdown'}
           <article class="markdown-preview" aria-label="Markdown preview">

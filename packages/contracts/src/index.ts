@@ -391,6 +391,7 @@ export type DesignTokens = {
   density: 'compact' | 'comfortable'
   fontFamily: string
   confirmDelete: boolean
+  showLineNumbers: boolean
 }
 
 export type CustomFont = {

@@ -67,6 +67,7 @@ export const defaultTokens: DesignTokens = {
   density: 'compact',
   fontFamily: '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif',
   confirmDelete: true,
+  showLineNumbers: false,
 }
 
 export const lightTokens: DesignTokens = {
@@ -122,6 +123,7 @@ export const lightTokens: DesignTokens = {
   density: 'compact',
   fontFamily: '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif',
   confirmDelete: true,
+  showLineNumbers: false,
 }
 
 export const builtInFontOptions = [
@@ -247,6 +249,7 @@ export function normalizeTokens(tokens: Partial<DesignTokens>): DesignTokens {
     radius: clampNumber(tokens.radius, 0, 32, defaultTokens.radius),
     density: tokens.density === 'comfortable' ? 'comfortable' : 'compact',
     confirmDelete: tokens.confirmDelete !== false,
+    showLineNumbers: tokens.showLineNumbers === true,
   }
   normalized.colorBackgroundGradient = composeBackgroundLayers(normalized)
   return normalized
